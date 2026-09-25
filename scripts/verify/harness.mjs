@@ -190,6 +190,20 @@ export async function renderRenderer({ bundlePath, html, css, bridge = null }) {
     window.excelDataAnalyzer = bridge;
   }
 
+  // jsdom cannot evaluate media queries. Reduced motion is reported so the
+  // animated statistics render their final value instead of a mid-animation
+  // frame; the application honours that setting by design.
+  window.matchMedia = (query) => ({
+    matches: String(query).includes('prefers-reduced-motion'),
+    media: String(query),
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  });
+
   window.eval(await readFile(bundlePath, 'utf8'));
 
   const settle = (ms = 40) => new Promise((resolve) => setTimeout(resolve, ms));

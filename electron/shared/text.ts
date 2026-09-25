@@ -1,5 +1,6 @@
 /**
- * Text normalization used by the Excel import pipeline.
+ * Text normalization shared by the Excel import pipeline and the renderer
+ * (filter inputs compare names and vehicle numbers with these exact rules).
  *
  * Every rule here is deliberately conservative: the application is an analyzer,
  * so it trims mechanical noise (whitespace, stray separators) but never rewrites

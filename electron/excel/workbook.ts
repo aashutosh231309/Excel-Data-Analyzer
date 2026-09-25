@@ -15,7 +15,7 @@ import {
   HEADER_SEARCH_DEPTH,
   type HeaderMatch,
 } from './headers';
-import { parseAmountMinorUnits } from './amounts';
+import { parseAmountMinorUnits } from '../shared/money';
 import { parseDateCell } from './dates';
 import {
   collapseWhitespace,
@@ -25,7 +25,7 @@ import {
   normalizePaymentMode,
   normalizePersonName,
   normalizeVehicleDisplay,
-} from './text';
+} from '../shared/text';
 
 /**
  * Workbook reading, worksheet inspection and record extraction.

@@ -6,11 +6,12 @@ Load a spreadsheet containing **Date, Name, Vehicle Number, Payment Mode, Amount
 and Remark**, then filter by **date, name, vehicle number and amount** with automatically
 calculated totals. Everything runs locally — no server, no database, no account, no upload.
 
-> **Stage 2 status — import and data understanding.**
-> The application now reads `.xlsx` / `.xls` workbooks locally, recognizes the expected columns,
-> normalizes every value into a typed record and shows the imported data with a data-quality
-> summary. Filtering, totals and export arrive in the following stages. The interface never
-> invents figures: every number on screen comes from the parsed workbook.
+> **Stage 3 status — filtering and automatic totals.**
+> The application reads `.xlsx` / `.xls` workbooks locally, normalizes every value into a typed
+> record and — on top of the imported data — filters by **date, name, vehicle number and amount**
+> in any combination, with the matching **record count, total amount and average amount**
+> calculated automatically. Export, editing and presets arrive in the following stages. The
+> interface never invents figures: every number on screen comes from the parsed workbook.
 
 ---
 
@@ -81,13 +82,13 @@ excel-data-analyzer/
 │   ├── excel/                   # Parsing pipeline (main process only)
 │   │   ├── workbook.ts          # Reading, worksheet inspection, record extraction
 │   │   ├── headers.ts           # Column recognition and header-row detection
-│   │   ├── dates.ts             # Excel serials, Date objects and written dates → ISO
-│   │   ├── amounts.ts           # ₹-formatted text → integer paise
-│   │   └── text.ts              # Name, vehicle, payment-mode and free-text rules
+│   │   └── dates.ts             # Excel serials, Date objects and written dates → ISO
 │   └── shared/                  # Contracts shared by both processes (no privileged APIs)
 │       ├── api.ts               # Request/response types + the exposed API surface
 │       ├── channels.ts          # IPC channel names
 │       ├── import.ts            # Record, statistics, issue and result contracts
+│       ├── money.ts             # ₹-formatted text → integer paise (shared by both processes)
+│       ├── text.ts              # Name, vehicle, payment-mode and free-text rules (shared)
 │       ├── file-types.ts        # Supported extensions (.xlsx, .xls)
 │       └── file-selection.ts    # Pure file-validation helpers (unit-testable)
 ├── src/
@@ -96,14 +97,18 @@ excel-data-analyzer/
 │   │   │                        # StatGrid, ErrorState, FileDropZone, PageHeader, Toast…
 │   │   ├── dashboard/           # FileImportCard, ImportProgressPanel, DashboardStats, RoadmapCard
 │   │   └── data/                # DataTable, DatasetStats, ValidationSummary,
-│   │                            # RecordDetailsPanel, ImportSummaryPanel, WorksheetSelector
+│   │                            # RecordDetailsPanel, ImportSummaryPanel, WorksheetSelector,
+│   │                            # FilterPanel, NameCombobox, FilteredSummary
+│   ├── domain/                  # Pure rules: filtering/validation/matching/totals
+│   │   └── filtering.ts         #   + local-day helpers and filter chips
 │   ├── hooks/                   # useWindowControls, usePlatformInfo, useCountUp
 │   ├── layouts/                 # AppShell, TitleBar, WindowControls, Sidebar, NavItem
 │   ├── lib/                     # desktop-bridge accessor, navigation config, excel rules
 │   ├── pages/                   # DashboardPage, DataPage, SettingsPage
-│   ├── state/DatasetProvider.tsx# Single source of truth for the imported workbook
+│   ├── state/                   # DatasetProvider (imported workbook, single copy of records)
+│   │   └── FilterProvider.tsx   #   + the filters and the single filtered result set
 │   ├── styles/globals.css       # Tailwind layers, focus states, scrollbars, motion rules
-│   ├── types/                   # Domain model (records, columns, filters) + window typings
+│   ├── types/                   # Display schema (columns, fields) + window typings
 │   ├── utils/                   # cn(), formatting helpers
 │   ├── App.tsx                  # Providers + shell
 │   └── main.tsx                 # React entry point
@@ -238,13 +243,55 @@ required column produces the message *"Required columns are missing: • Vehicle
 
 ---
 
+## Filtering and totals
+
+The filter panel on the Data screen works on the **normalized records already in memory**. The
+workbook is never read, parsed or normalized again for a filter, the source file is never
+modified and the result is deterministic.
+
+| Category | Input | Rule |
+| -------- | ----- | ---- |
+| Date | One calendar day (`Today`, `Yesterday`, `Clear` shortcuts) | Compared with the ISO date of the record; `03/04/2026` is 3 April 2026 |
+| Name | Searchable selector built from the names in the current worksheet | Case- and whitespace-insensitive; the chosen name must match exactly — no fuzzy matching |
+| Vehicle Number | Free text, e.g. `UP32AB1234` | Compared with the Stage 2 key: upper-cased with separators removed, so `up32 ab 1234` ≡ `UP-32-AB-1234` |
+| Amount | Exact value (default) or a minimum/maximum range | Compared as integer paise; `2000`, `2,000`, `2000.00`, `₹2,000` and `₹ 2,000` all parse identically |
+
+* **At least one filter is required.** Submitting the empty panel shows *"Please provide at least
+  one filter."* / *"Add at least one filter to search the data."* and keeps the dataset intact —
+  the whole sheet is never presented as a search result.
+* **Every populated category must match** (AND). Categories are never combined with OR, and a
+  category that is left empty does not restrict anything.
+* **Filtering is explicit.** Nothing runs while typing: the records are filtered by
+  **🔍 Filter Data**, by removing an individual chip (`Date: 25/09/2026 ×`) or by **Clear Filters**,
+  which restores the imported dataset.
+* **Invalid input blocks the filter** with an inline message and keeps the previous results:
+  an unreadable amount (*"abc" is not a valid amount…*), a minimum above the maximum
+  (*"Minimum amount cannot be greater than maximum amount."*) or an unusable vehicle number.
+* **Totals are exact.** `Total Amount` is the sum of the **matching** records in integer paise (no
+  formatted strings, no floating-point drift) and `Average Amount` is that total divided by the
+  matching records that carry a valid amount. A record whose amount could not be read is `null`:
+  it stays visible in the table, is never counted as ₹0 and never satisfies an amount filter.
+* **One authoritative result set.** The `Filtered Records` count, `Total Amount`,
+  `Average Amount`, the table, the pagination and the chips are all derived from the same filtered
+  array, so they cannot disagree. Duplicate-looking rows stay separate records.
+* **Zero matches** show a polished empty state (*"No matching records — try changing or clearing
+  one or more filters."*) with `Filtered Records 0`, `Total Amount ₹0` and `Average Amount —`;
+  no stale figure is left behind. With no filters applied the results area states that the records
+  are the imported dataset, and the dashboard tiles say *"No filters applied yet"*.
+* **The table stays paginated** (50/100/250 rows per page) and a new filter always returns it to
+  page 1, so the user can never be stranded on a page that no longer exists.
+* **Amounts are displayed with Indian grouping** (`₹2,000`, `₹48,750`, `₹1,24,500`), with paise
+  only when they exist (`₹2,000.50`).
+
+---
+
 ## Verification
 
 ```bash
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **319 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **430 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -275,6 +322,18 @@ npm run verify
    notification, the Data screen (statistics, table, validation summary, record details,
    worksheet switcher), the empty state, the error states, a 5,000-record workbook and the
    retention of the previous dataset when a replacement fails.
+10. **Filter engine** — the pure rules of `src/domain/filtering.ts`: the specification's example
+   dataset (date + name = 2 records / ₹3,500 / ₹1,750; vehicle = 3 records / ₹5,500; exact ₹2,000 =
+   1 record), every single and combined category, all three amount modes, validation
+   (empty submission, unreadable amounts, minimum above maximum), invalid values, duplicate rows,
+   chips, the day-first date policy (`03/04/2026` = 3 April 2026) and the local `Today`/`Yesterday`
+   rule — including a 20,000-row run to show the single-pass filtering.
+11. **Filter UI** — the rendered panel: the four categories, the searchable name selector
+   (partial search, arrow keys, `Enter`, `Escape`, `aria-activedescendant`), the amount modes, the
+   inline errors, the chips, the count message, the filtered figures, the zero-result state,
+   `Clear Filters`, the dashboard tiles following the filters, and the pagination reset when a new
+   filter replaces a larger result set. The suite also proves that filtering never returns to the
+   workbook (`importWorkbook` is called exactly once).
 
 The native window, the Windows file picker and the packaged installer need a machine that can run
 Electron: `npm run dev` on Windows, then work through the checklist below.
@@ -295,6 +354,24 @@ Electron: `npm run dev` on Windows, then work through the checklist below.
 * Import a file that is not a spreadsheet, a truncated download and an empty sheet → the
   corresponding friendly messages, and the app never crashes.
 * Replace a loaded workbook with another file → the table is replaced only on success.
+* Filter by **Date** (with `Today`, `Yesterday` and `Clear`), by **Name** (typing narrows the
+  suggestions; the arrow keys and `Enter` pick one; `Escape` closes the list), by **Vehicle
+  Number** (`up-32-ab-1234` finds `UP32AB1234`) and by **Amount** (exact and range) — one at a
+  time, then two, then all four together.
+* Press **Filter Data** with every box empty → *"Please provide at least one filter."* appears and
+  the imported records stay untouched.
+* Type `abc` in an amount box and `1000`/`5000` as minimum/maximum → the inline messages appear,
+  the filter button is disabled and the previous results stay on screen.
+* Remove one chip → only that category stops filtering; press **Clear Filters** → the imported
+  dataset and the *"No filters applied yet"* hint return.
+* Filter to a combination without matches → *"No matching records"* with `₹0` and `—`, and no
+  stale total.
+* Check the figures against the table: `Filtered Records`, `Total Amount` and `Average Amount`
+  must equal the listed rows — including a worksheet with an invalid amount (never counted as ₹0).
+* With more than one page of results, move to the last page and apply a new filter → the table
+  returns to page 1 and the page count follows the matches.
+* Switch to the Dashboard with filters applied → the tiles follow the filters; without filters they
+  say *"No filters applied yet"*.
 * Minimise, maximise/restore and close the window with the custom title-bar controls.
 * `npm start` (packaged-style build, `app://` origin) renders exactly like `npm run dev`.
 * Resize the window (including down to 900 × 620) — the layout stays usable, and a large workbook
@@ -308,10 +385,10 @@ Electron: `npm run dev` on Windows, then work through the checklist below.
 | ----- | -------------------------------------------------------------------- |
 | 1     | Desktop shell, architecture, design system, file selection ✅         |
 | 2     | Workbook parsing, normalization and the data screen ✅                |
-| 3     | Filtering by date/name/vehicle/amount, totals over the filtered set   |
+| 3     | Filtering by date/name/vehicle/amount, totals over the filtered set ✅ |
 | 4     | Export of filtered results and preferences                           |
 | 5     | Windows installer polish, icons, signing, release packaging          |
 
-The Data screen deliberately ships without filter controls: Stage 3 adds the date filter (with
-Today/Yesterday shortcuts), the name and vehicle search, the amount range and the automatic
-filtered total on top of the records that are already loaded.
+Stage 3 is complete: the Data screen filters the records that are already loaded and calculates
+the matching total and average automatically. Exporting the filtered results, editing records and
+saved filter presets are the subject of the next stages and are deliberately not implemented yet.

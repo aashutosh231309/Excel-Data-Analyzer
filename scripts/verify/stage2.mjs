@@ -195,16 +195,18 @@ async function verifyContractsAndSecurity(workspace) {
     statefulRecords.join(', '),
   );
 
-  const stage3Tokens = rendererFiles.filter((file, index) =>
-    /activeFilters|searchQuery|minimumAmount|maximumAmount|applyFilters|dateFilter|amountFilter/.test(
+  // Stage 2 shipped without filters; Stage 3 adds them. The features that stay
+  // out of scope are unchanged and must not appear anywhere in the renderer.
+  const outOfScope = rendererFiles.filter((file, index) =>
+    /xlsx\.write|writeFile|new Worker|indexedDB|sqlite|firebase|redux|axios|fetch\(/.test(
       rendererSources[index] ?? '',
     ),
   );
   check(
     group,
-    'no filtering engine from the next stage has been started',
-    stage3Tokens.length === 0,
-    stage3Tokens.join(', '),
+    'no export, database, network or state-library feature has been started',
+    outOfScope.length === 0,
+    outOfScope.join(', '),
   );
 
   const apiSource = stripComments(await readSource('electron/shared/api.ts'));
@@ -243,8 +245,8 @@ async function verifyContractsAndSecurity(workspace) {
 
 async function verifyNormalization(workspace) {
   const group = 'normalization';
-  const text = await bundleModule('electron/excel/text.ts', path.join(workspace, 'text.cjs'));
-  const amounts = await bundleModule('electron/excel/amounts.ts', path.join(workspace, 'amounts.cjs'));
+  const text = await bundleModule('electron/shared/text.ts', path.join(workspace, 'text.cjs'));
+  const amounts = await bundleModule('electron/shared/money.ts', path.join(workspace, 'money.cjs'));
   const dates = await bundleModule('electron/excel/dates.ts', path.join(workspace, 'dates.cjs'));
   const headers = await bundleModule('electron/excel/headers.ts', path.join(workspace, 'headers.cjs'));
 
@@ -940,11 +942,16 @@ async function verifyRendererImport(workspace) {
       (details?.textContent ?? '').slice(0, 200),
     );
 
+    // Stage 2 delivered the records without filters. Stage 3 puts the filter
+    // panel above them; the imported rows themselves must stay exactly as they
+    // were — same columns, same order, nothing filtered away until asked for.
     check(
       group,
-      'the data screen offers no filtering controls',
-      app.document.querySelectorAll('input[type="date"], input[type="search"], input[type="text"], input[type="number"]').length === 0 &&
-        !/apply filter|clear filter|today|yesterday/i.test(app.text()),
+      'the records stay unfiltered until a filter is applied',
+      app.document.querySelector('[aria-label="Filters"]') !== null &&
+        Array.from(app.document.querySelectorAll('tbody tr')).length === 2 &&
+        /no filters applied yet/i.test(app.text()),
+      app.text().slice(0, 120),
     );
     check(
       group,

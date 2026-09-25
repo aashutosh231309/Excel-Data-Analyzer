@@ -1,5 +1,7 @@
 /**
- * Monetary normalization.
+ * Monetary normalization — shared by the main process (Excel parsing) and the
+ * renderer (filter inputs), so an amount typed into a filter is parsed by
+ * exactly the same rules as an amount read from a workbook.
  *
  * Amounts are stored as an integer number of minor units (paise, ₹1 = 100).
  * Integers keep totals exact: adding `200000 + 50` can never produce the

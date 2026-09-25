@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { FileSpreadsheet, FolderOpen, ShieldCheck, Table2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Eraser, FileSpreadsheet, FolderOpen, SearchX, ShieldCheck, Table2 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -7,12 +7,15 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { DataTable } from '@/components/data/DataTable';
 import { DatasetStats } from '@/components/data/DatasetStats';
+import { FilterPanel } from '@/components/data/FilterPanel';
+import { FilteredSummary } from '@/components/data/FilteredSummary';
 import { ImportProgressPanel } from '@/components/dashboard/ImportProgressPanel';
 import { ImportSummaryPanel } from '@/components/data/ImportSummaryPanel';
 import { RecordDetailsPanel } from '@/components/data/RecordDetailsPanel';
 import { ValidationSummary } from '@/components/data/ValidationSummary';
 import { WorksheetSelector } from '@/components/data/WorksheetSelector';
 import { useDataset } from '@/state/DatasetProvider';
+import { useFilters } from '@/state/FilterProvider';
 import type { AppSection } from '@/lib/navigation';
 import { IMPORT_FIELD_LABELS, type TransactionRecord } from '@shared/import';
 import { formatCount, formatFileSize } from '@/utils/format';
@@ -22,11 +25,12 @@ interface DataPageProps {
 }
 
 /**
- * Data preview screen.
+ * Data screen: import quality, filters and the filtered records.
  *
- * Shows the imported records with their statistics and validation state.
  * Every value comes from the dataset provider, which holds the single copy of
- * the records; nothing on this screen re-parses or transforms the workbook.
+ * the records, and from the filter provider, which holds the single filtered
+ * result set. Nothing on this screen re-parses, re-reads or transforms the
+ * workbook.
  */
 export function DataPage({ onNavigate }: DataPageProps) {
   const {
@@ -44,7 +48,15 @@ export function DataPage({ onNavigate }: DataPageProps) {
     dismissError,
   } = useDataset();
 
+  const { result, isFiltered, clearFilters } = useFilters();
   const [selectedRecord, setSelectedRecord] = useState<TransactionRecord | null>(null);
+
+  // A row that is no longer part of the result set cannot stay selected.
+  useEffect(() => {
+    if (selectedRecord && !result.records.some((record) => record.id === selectedRecord.id)) {
+      setSelectedRecord(null);
+    }
+  }, [result.records, selectedRecord]);
 
   const chooseAnotherFile = useCallback(() => {
     void importFromDialog();
@@ -62,9 +74,21 @@ export function DataPage({ onNavigate }: DataPageProps) {
     [selectWorksheet],
   );
 
+  const resultsSummary = useMemo(() => {
+    if (!isFiltered) {
+      return `Showing all ${formatCount(result.count)} imported records · no filters applied yet`;
+    }
+    if (result.count === 0) {
+      return 'No matching records';
+    }
+    return `Showing ${formatCount(result.count)} matching ${
+      result.count === 1 ? 'record' : 'records'
+    } · duplicates preserved`;
+  }, [isFiltered, result.count]);
+
   const subtitle = useMemo(() => {
     if (!file) {
-      return 'Imported records will be listed here, with search and filters to follow.';
+      return 'Import a workbook to filter the records and total the matching amounts.';
     }
     const parts = [file.name];
     if (sheetName) {
@@ -148,23 +172,44 @@ export function DataPage({ onNavigate }: DataPageProps) {
 
           <ValidationSummary records={dataset.records} onInspectRecord={handleSelectRecord} />
 
-          <section aria-label="Imported records" className="flex flex-col gap-3">
+          <FilterPanel />
+
+          <section aria-label="Filtered results" className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-content">
-                Imported records
-                <span className="ml-2 text-[11px] font-normal text-content-muted">
-                  {formatCount(dataset.records.length)} rows · duplicates preserved
+                {isFiltered ? 'Filtered results' : 'Imported records'}
+                <span aria-live="polite" className="ml-2 text-[11px] font-normal text-content-muted">
+                  {resultsSummary}
                 </span>
               </h2>
               <p className="text-[11px] text-content-muted">
-                Click a row to see the complete payment reason and remark.
+                {isFiltered
+                  ? 'Click a row to see the complete payment reason and remark.'
+                  : 'These are the records of the imported dataset, not a filtered subset. Click a row to see the complete payment reason and remark.'}
               </p>
             </div>
-            <DataTable
-              records={dataset.records}
-              selectedRecordId={selectedRecord?.id ?? null}
-              onSelectRecord={handleSelectRecord}
-            />
+
+            <FilteredSummary result={result} />
+
+            {isFiltered && result.count === 0 ? (
+              <EmptyState
+                icon={SearchX}
+                title="No matching records"
+                description="Try changing or clearing one or more filters."
+                className="animate-fade-up"
+                action={
+                  <Button variant="secondary" icon={Eraser} onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : (
+              <DataTable
+                records={result.records}
+                selectedRecordId={selectedRecord?.id ?? null}
+                onSelectRecord={handleSelectRecord}
+              />
+            )}
           </section>
         </div>
       ) : (

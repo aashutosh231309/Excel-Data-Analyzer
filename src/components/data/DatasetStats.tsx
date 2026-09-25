@@ -43,11 +43,11 @@ export function DatasetStats({ statistics }: DatasetStatsProps) {
       },
       {
         id: 'totalAmount',
-        label: 'Total Amount',
+        label: 'Imported Total',
         value: statistics.totalAmountMinor,
         hint:
           statistics.recordsWithAmount === statistics.importedRecords
-            ? 'All imported records carry a valid amount.'
+            ? 'Sum of every imported record — filters do not change it.'
             : `Excludes ${formatCount(statistics.importedRecords - statistics.recordsWithAmount)} records without a valid amount.`,
         icon: Wallet,
         format: formatAmountMinor,

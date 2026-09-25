@@ -23,11 +23,13 @@ const PLANNED_CAPABILITIES: readonly PlannedCapability[] = [
     icon: Funnel,
     title: 'Filter the records',
     description: 'Filter by date, name, vehicle number and amount.',
+    done: true,
   },
   {
     icon: Sigma,
     title: 'Automatic totals',
     description: 'Total and average amount of the filtered records.',
+    done: true,
   },
   {
     icon: Download,
@@ -42,7 +44,7 @@ export function RoadmapCard() {
     <Card padding="lg" className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent-violet" aria-hidden="true" />
-        <h2 className="text-sm font-semibold text-content">Planned for the next stages</h2>
+        <h2 className="text-sm font-semibold text-content">What this build can do</h2>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-medium text-content-muted">Expected columns</span>
@@ -80,7 +82,8 @@ export function RoadmapCard() {
       </ul>
       <p className="border-t border-surface-border pt-3 text-[11px] text-content-muted">
         Workbooks are parsed locally in the main process and only normalised records reach the
-        interface. Filtering and exports follow in the next stages.
+        interface. Filtering runs in memory; exporting the filtered results follows in the next
+        stage.
       </p>
     </Card>
   );

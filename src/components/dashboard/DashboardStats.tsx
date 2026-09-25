@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Funnel, ListChecks, TrendingUp, Wallet } from 'lucide-react';
 import { StatGrid } from '@/components/ui/StatGrid';
 import type { StatCardModel } from '@/components/ui/StatCard';
+import { useFilters } from '@/state/FilterProvider';
 import { formatAmountMinor, formatCount } from '@/utils/format';
 import type { ImportStatistics } from '@shared/import';
 
@@ -11,10 +12,13 @@ interface DashboardStatsProps {
 
 /**
  * Headline figures of the dashboard. Without an imported workbook every tile
- * shows a dash; once data is loaded the numbers come straight from the import
- * statistics produced by the main process.
+ * shows a dash; once data is loaded the numbers come from the import statistics
+ * produced by the main process, or from the filtered result set while filters
+ * are applied on the Data screen.
  */
 export function DashboardStats({ statistics }: DashboardStatsProps) {
+  const { result, isFiltered } = useFilters();
+
   const cards = useMemo<StatCardModel[]>(() => {
     const amountHint =
       statistics && statistics.recordsWithAmount > 0
@@ -32,15 +36,22 @@ export function DashboardStats({ statistics }: DashboardStatsProps) {
       {
         id: 'filteredRecords',
         label: 'Filtered Records',
-        value: statistics?.importedRecords ?? null,
-        hint: 'No filters applied yet — every imported record is included.',
+        value: isFiltered ? result.count : statistics?.importedRecords ?? null,
+        hint: isFiltered
+          ? 'Records matching the filters applied on the Data screen.'
+          : 'No filters applied yet — every imported record is included.',
         icon: Funnel,
+        tone: isFiltered ? 'accent' : 'default',
       },
       {
         id: 'totalAmount',
         label: 'Total Amount',
-        value: statistics?.totalAmountMinor ?? null,
-        hint: amountHint,
+        value: isFiltered ? result.totalAmountMinor : statistics?.totalAmountMinor ?? null,
+        hint: isFiltered
+          ? result.amountRecords === 0
+            ? 'No matching record carries a readable amount.'
+            : `Sum of ${formatCount(result.amountRecords)} matching records with a valid amount.`
+          : amountHint,
         icon: Wallet,
         format: formatAmountMinor,
         tone: 'accent',
@@ -48,13 +59,17 @@ export function DashboardStats({ statistics }: DashboardStatsProps) {
       {
         id: 'averageAmount',
         label: 'Average Amount',
-        value: statistics?.averageAmountMinor ?? null,
-        hint: 'Mean amount of the records with a valid amount.',
+        value: isFiltered ? result.averageAmountMinor : statistics?.averageAmountMinor ?? null,
+        hint: isFiltered
+          ? result.averageAmountMinor === null
+            ? 'An average needs at least one matching record with a valid amount.'
+            : 'Total of the matching records divided by those with a valid amount.'
+          : 'Mean amount of the imported records with a valid amount.',
         icon: TrendingUp,
         format: formatAmountMinor,
       },
     ];
-  }, [statistics]);
+  }, [statistics, result, isFiltered]);
 
   return (
     <StatGrid
@@ -62,7 +77,9 @@ export function DashboardStats({ statistics }: DashboardStatsProps) {
       label="Dataset statistics"
       footnote={
         statistics
-          ? 'Filtering and filtered totals arrive in the next stage.'
+          ? isFiltered
+            ? 'Filtered Records, Total Amount and Average Amount follow the filters applied on the Data screen.'
+            : 'No filters applied yet — these figures describe the imported dataset.'
           : 'Statistics become available once a spreadsheet is imported.'
       }
     />
