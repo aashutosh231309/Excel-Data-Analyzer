@@ -4,6 +4,8 @@ import {
   dialog,
   ipcMain,
   nativeTheme,
+  net,
+  protocol,
   session,
   shell,
   type IpcMainInvokeEvent,
@@ -11,6 +13,7 @@ import {
 } from 'electron';
 import { statSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { IPC_CHANNELS } from './shared/channels';
 import { isSupportedExcelFile, SUPPORTED_EXCEL_EXTENSIONS } from './shared/file-types';
 import {
@@ -31,6 +34,29 @@ const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const RENDERER_DIST = path.join(__dirname, '../dist');
 const BACKGROUND_COLOR = '#0B1020';
 
+/**
+ * The packaged renderer is served from a privileged `app://` scheme instead of
+ * `file://`. Chromium refuses to load ES module scripts from `file://` pages
+ * (their origin is opaque, so the module request fails CORS), and Vite emits a
+ * module script — loading the bundle through `file://` would produce a window
+ * that never renders. Serving from `app://` gives the renderer a real, secure
+ * origin, keeps relative asset resolution and fonts working, and lets the
+ * Content-Security-Policy rely on `'self'`.
+ */
+const APP_SCHEME = 'app';
+const APP_HOST = 'bundle';
+const RENDERER_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
+const RENDERER_ENTRY_URL = `${RENDERER_ORIGIN}/index.html`;
+
+// Runs at module scope on purpose: privileged schemes must be declared before
+// the `ready` event, and this call is only allowed once per process.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true },
+  },
+]);
+
 let mainWindow: BrowserWindow | null = null;
 
 /** Electron is single-instance: reopening the app focuses the existing window. */
@@ -50,6 +76,7 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(() => {
     nativeTheme.themeSource = 'dark';
     lockDownPermissions();
+    registerRendererProtocol();
     registerIpcHandlers();
     mainWindow = createMainWindow();
 
@@ -100,11 +127,7 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  if (DEV_SERVER_URL) {
-    void window.loadURL(DEV_SERVER_URL);
-  } else {
-    void window.loadFile(path.join(RENDERER_DIST, 'index.html'));
-  }
+  void window.loadURL(DEV_SERVER_URL ?? RENDERER_ENTRY_URL);
 
   window.once('ready-to-show', () => window.show());
 
@@ -128,10 +151,10 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
-  // The renderer is a local SPA: navigating away from the app is never expected.
+  // The renderer is a local SPA: navigating away from it is never expected.
   window.webContents.on('will-navigate', (event, url) => {
-    const isAllowedDevNavigation = DEV_SERVER_URL ? url.startsWith(DEV_SERVER_URL) : false;
-    if (!isAllowedDevNavigation && !url.startsWith('file://')) {
+    const isAllowed = DEV_SERVER_URL ? url.startsWith(DEV_SERVER_URL) : url.startsWith(RENDERER_ORIGIN);
+    if (!isAllowed) {
       event.preventDefault();
     }
   });
@@ -260,6 +283,67 @@ function validateExcelPath(filePath: unknown): ValidateFileResult {
     status: 'selected',
     file: buildExcelFileSelection(filePath, sizeInBytes, createSelectionId(fileName)),
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Renderer protocol                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Serves the packaged renderer bundle over `app://bundle/…`.
+ * Only files inside the build output directory can ever be returned.
+ */
+function registerRendererProtocol(): void {
+  protocol.handle(APP_SCHEME, async (request) => {
+    const filePath = resolveRendererFile(request.url);
+    if (!filePath) {
+      return notFoundResponse();
+    }
+    try {
+      return await net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return notFoundResponse();
+    }
+  });
+}
+
+/** Maps an `app://bundle/…` URL onto a file inside the build output directory. */
+function resolveRendererFile(requestUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(requestUrl);
+  } catch {
+    return null;
+  }
+
+  if (url.host !== APP_HOST) {
+    return null;
+  }
+
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+
+  if (pathname.includes('\0')) {
+    return null;
+  }
+
+  const requestedPath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const target = path.resolve(RENDERER_DIST, requestedPath);
+
+  // Reject anything that escapes the bundle, e.g. app://bundle/../../secret.txt
+  const relativePath = path.relative(RENDERER_DIST, target);
+  const isInsideBundle =
+    relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+
+  return isInsideBundle ? target : null;
+}
+
+function notFoundResponse(): Response {
+  return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
 }
 
 /* -------------------------------------------------------------------------- */

@@ -52,7 +52,7 @@ mode and opens the desktop window against the dev server.
 | `npm run build`           | Type-check, then build main/preload (`dist-electron`) and UI (`dist`) |
 | `npm run typecheck`       | TypeScript strict-mode check with no emit                       |
 | `npm start`               | Build and run the packaged-style application (`electron .`)     |
-| `npm run verify`          | Build, then run the Stage 1 verification harness (127 checks)    |
+| `npm run verify`          | Build, then run the Stage 1 verification harness (136 checks)    |
 | `npm run icons`           | Regenerate `build/icon.ico` / `build/icon.png`                  |
 | `npm run pack`            | Unpacked application directory (`release/`)                     |
 | `npm run dist:win`        | Windows installer (NSIS, x64)                                   |
@@ -115,14 +115,20 @@ excel-data-analyzer/
 ## Architecture
 
 ```
-Electron main process                Renderer (React)
-├── window management                ├── layouts / pages / components
-├── file dialogs & validation        ├── hooks & UI state
-└── IPC handlers  ──┐                └── lib/desktop-bridge  ──┐
-                    │                                          │
-                    └────────► preload.ts (contextBridge) ◄────┘
-                               window.excelDataAnalyzer
+Electron main process                     Renderer (React)
+├── window management                     ├── layouts / pages / components
+├── app:// protocol (packaged bundle)     ├── hooks & UI state
+├── file dialogs & validation             └── lib/desktop-bridge  ──┐
+└── IPC handlers  ──┐                                               │
+                    └────────────► preload.ts (contextBridge) ◄────┘
+                                    window.excelDataAnalyzer
 ```
+
+In development the renderer is served by the Vite dev server (`http://localhost:5273`). The
+packaged application serves it from the privileged `app://bundle/` scheme registered in
+`electron/main.ts`: Chromium refuses to load ES module scripts from `file://` pages, so loading
+the Vite bundle with `loadFile()` would produce a window that never renders. The handler maps
+`app://bundle/…` onto files inside `dist/` and refuses anything that escapes that directory.
 
 * The renderer has **no** access to Node.js, `require`, `process`, `fs` or `ipcRenderer`.
 * The only bridge is `window.excelDataAnalyzer`, a frozen, explicitly whitelisted API:
@@ -143,6 +149,7 @@ Electron main process                Renderer (React)
 | Navigation                     | `will-navigate` blocked; external links open in the default browser |
 | OS permissions                 | All denied (camera, microphone, geolocation, …)             |
 | File dialogs                   | Filtered to `xlsx`/`xls`; unsupported paths are rejected in main |
+| Renderer origin                | Privileged `app://bundle/` scheme; path traversal out of `dist/` refused |
 | Single instance                | Enforced; a second launch focuses the existing window        |
 
 ### Window behaviour
@@ -172,16 +179,17 @@ Every colour, radius, shadow and animation is declared once in `tailwind.config.
 npm run verify
 ```
 
-The harness performs 127 checks that do not require a GUI:
+The harness performs 136 checks that do not require a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
 2. **Security configuration** — static verification of the Electron flags, the whitelisted bridge,
    the absence of Node/Electron imports in the renderer and the strict CSP.
 3. **Main process** — the real `dist-electron/main.js` bundle is loaded with a mocked Electron API
-   to exercise the window options, every IPC handler, the file dialog (accept, cancel, reject),
-   drag-and-drop validation (wrong type, directory, missing file, malformed input), the window
-   commands, the permission policy, navigation blocking and the single-instance rule.
+   to exercise the window options, the `app://` renderer protocol (including path-traversal
+   protection), every IPC handler, the file dialog (accept, cancel, reject), drag-and-drop
+   validation (wrong type, directory, missing file, malformed input), the window commands, the
+   permission policy, navigation blocking and the single-instance rule.
 4. **Renderer** — the real React application is rendered against the compiled Tailwind stylesheet
    in a DOM environment: copy, palette, radii, empty-state placeholders, navigation, notification
    and drag-and-drop behaviour.
@@ -201,6 +209,7 @@ The native window and the Windows file picker themselves need a machine that can
 * Choose a non-spreadsheet file → an error notification appears and the prompt stays.
 * Drag a spreadsheet onto the card → the drop zone highlights, then the file is accepted.
 * Minimise, maximise/restore and close the window with the custom title-bar controls.
+* `npm start` (packaged-style build, `app://` origin) renders exactly like `npm run dev`.
 * Resize the window (including down to 900 × 620) — the layout stays usable.
 * The **Data** and **Settings** screens render; placeholder controls are visibly disabled.
 

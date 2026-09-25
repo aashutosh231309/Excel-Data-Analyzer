@@ -12,11 +12,11 @@
  * run Electron; this harness covers everything that is verifiable headlessly.
  */
 import { readFile, readdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import Module, { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
@@ -270,10 +270,14 @@ async function verifySecurityConfiguration() {
     bridgeUsage.length <= 1 && bridgeUsage.every((file) => file === 'src/lib/desktop-bridge.ts'),
     bridgeUsage.join(', '),
   );
+  const viteConfig = await readSource('vite.config.ts');
   check(
     'security',
-    'the packaged renderer ships a strict CSP',
-    /script-src 'self' file:/.test(await readSource('vite.config.ts')),
+    "the packaged renderer ships a strict CSP (no inline scripts, no remote origins)",
+    /default-src 'self'/.test(viteConfig) &&
+      /script-src 'self'/.test(viteConfig) &&
+      !/script-src[^\n]*'unsafe-inline'/.test(viteConfig) &&
+      /connect-src 'none'/.test(viteConfig),
   );
 }
 
@@ -759,6 +763,8 @@ async function verifyMainProcess(workspace) {
       dialogOptions: [],
       externalUrls: [],
       themeSource: 'system',
+      privilegedSchemes: [],
+      protocolHandlers: new Map(),
     };
 
     class FakeWebContents {
@@ -793,12 +799,15 @@ async function verifyMainProcess(workspace) {
         state.windows.push(this);
       }
       loadURL(url) {
-        this.loadedUrl = url;
+        this.url = url;
         return Promise.resolve();
       }
       loadFile(file) {
         this.loadedFile = file;
         return Promise.resolve();
+      }
+      get loadedUrl() {
+        return this.url;
       }
       once(event, listener) {
         if (event === 'ready-to-show') {
@@ -882,6 +891,20 @@ async function verifyMainProcess(workspace) {
           },
         },
       },
+      protocol: {
+        registerSchemesAsPrivileged: (schemes) => state.privilegedSchemes.push(...schemes),
+        handle: (scheme, handler) => state.protocolHandlers.set(scheme, handler),
+      },
+      // Stands in for Electron's `net.fetch`, which streams local files.
+      net: {
+        fetch: async (fileUrl) => {
+          const filePath = fileURLToPath(fileUrl);
+          if (!existsSync(filePath)) {
+            throw new Error(`ENOENT: ${filePath}`);
+          }
+          return new Response(readFileSync(filePath), { status: 200 });
+        },
+      },
       nativeTheme: {
         get themeSource() {
           return state.themeSource;
@@ -960,8 +983,76 @@ async function verifyMainProcess(workspace) {
   check('main process', 'the window background matches the design system', windowOptions?.backgroundColor === '#0B1020');
   harness.window?.readyToShow?.();
   check('main process', 'the ready-to-show handler shows the window', harness.window?.shown === true);
-  check('main process', 'the packaged renderer index.html is loaded', harness.window?.loadedFile === path.join(root, 'dist/index.html'), harness.window?.loadedFile);
+  check(
+    'main process',
+    'the renderer is loaded over the privileged app:// scheme, not file://',
+    harness.window?.loadedUrl === 'app://bundle/index.html',
+    harness.window?.loadedUrl,
+  );
   check('main process', 'dark mode is requested from the OS', state.themeSource === 'dark');
+
+  // --- packaged renderer protocol ----------------------------------------
+  const scheme = state.privilegedSchemes.find((entry) => entry.scheme === 'app');
+  check(
+    'main process',
+    'the app:// scheme is registered as standard, secure and fetch-capable',
+    scheme?.privileges?.standard === true &&
+      scheme.privileges.secure === true &&
+      scheme.privileges.supportFetchAPI === true,
+    JSON.stringify(state.privilegedSchemes),
+  );
+
+  const serve = state.protocolHandlers.get('app');
+  check('main process', 'a handler serves the app:// scheme', typeof serve === 'function');
+  if (serve) {
+    const indexResponse = await serve({ url: 'app://bundle/index.html' });
+    const indexBody = await indexResponse.text();
+    check(
+      'main process',
+      'the packaged index.html is served with its CSP',
+      indexResponse.status === 200 && indexBody.includes('Content-Security-Policy'),
+    );
+
+    const assets = await readdir(path.join(root, 'dist/assets'));
+    const scriptName = assets.find((file) => file.endsWith('.js'));
+    const scriptResponse = await serve({ url: `app://bundle/assets/${scriptName}` });
+    check(
+      'main process',
+      'renderer assets are served through the same scheme',
+      scriptResponse.status === 200 && (await scriptResponse.text()).length > 1000,
+    );
+
+    // A file that really exists just outside the served bundle: if the guard
+    // were missing, this request would return its contents.
+    const secretPath = path.join(root, '.verify-secret.txt');
+    await writeFile(secretPath, 'verify-secret-payload');
+    try {
+      const traversal = await serve({ url: 'app://bundle/%2e%2e%2F.verify-secret.txt' });
+      const traversalBody = await traversal.text();
+      check(
+        'main process',
+        'path traversal outside the bundle is refused',
+        traversal.status === 404 && !traversalBody.includes('verify-secret-payload'),
+        `status ${traversal.status}`,
+      );
+
+      const normalizedTraversal = await serve({ url: 'app://bundle/%2e%2e/%2e%2e/.verify-secret.txt' });
+      check(
+        'main process',
+        'encoded parent segments cannot escape the bundle',
+        normalizedTraversal.status === 404 &&
+          !(await normalizedTraversal.text()).includes('verify-secret-payload'),
+      );
+    } finally {
+      await rm(secretPath, { force: true });
+    }
+
+    const otherHost = await serve({ url: 'app://elsewhere/index.html' });
+    check('main process', 'requests for another app:// host are refused', otherHost.status === 404);
+
+    const missing = await serve({ url: 'app://bundle/assets/missing.js' });
+    check('main process', 'a missing renderer file returns 404 instead of throwing', missing.status === 404);
+  }
 
   const expectedChannels = [
     'excel:browse-file',
@@ -1109,8 +1200,12 @@ async function verifyMainProcess(workspace) {
   check('main process', 'navigation away from the application is blocked', navigationDecision.prevented === true);
 
   const localNavigation = { prevented: false, preventDefault() { this.prevented = true; } };
-  harness.window.webContents.navigationListeners[0]?.(localNavigation, `file://${path.join(root, 'dist/index.html')}`);
-  check('main process', 'local renderer navigation stays allowed', localNavigation.prevented === false);
+  harness.window.webContents.navigationListeners[0]?.(localNavigation, 'app://bundle/index.html#dashboard');
+  check('main process', 'in-app renderer navigation stays allowed', localNavigation.prevented === false);
+
+  const fileNavigation = { prevented: false, preventDefault() { this.prevented = true; } };
+  harness.window.webContents.navigationListeners[0]?.(fileNavigation, `file://${path.join(root, 'dist/index.html')}`);
+  check('main process', 'file:// navigation is not allowed any more', fileNavigation.prevented === true);
 
   // --- single instance ----------------------------------------------------
   const second = await loadMainProcess({ singleInstanceLock: false });

@@ -11,14 +11,13 @@ import path from 'node:path';
  * from the bundle only and no network connection is permitted.
  */
 const PRODUCTION_CSP = [
-  // `file:` is listed explicitly because the packaged renderer is loaded from
-  // the local file system, where 'self' alone is ambiguous across Chromium
-  // versions. Inline scripts and any remote origin stay blocked.
-  "default-src 'self' file:",
-  "script-src 'self' file:",
-  "style-src 'self' file: 'unsafe-inline'",
-  "img-src 'self' file: data:",
-  "font-src 'self' file: data:",
+  // The packaged renderer is served from the privileged `app://bundle/` origin
+  // (see electron/main.ts), so 'self' is a real, unambiguous origin here.
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
   "connect-src 'none'",
   "object-src 'none'",
   "base-uri 'none'",
