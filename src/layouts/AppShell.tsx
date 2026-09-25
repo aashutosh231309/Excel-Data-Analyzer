@@ -52,7 +52,7 @@ export function AppShell() {
 function renderSection(section: AppSection, navigate: (section: AppSection) => void) {
   switch (section) {
     case 'dashboard':
-      return <DashboardPage />;
+      return <DashboardPage onNavigate={navigate} />;
     case 'data':
       return <DataPage onNavigate={navigate} />;
     case 'settings':

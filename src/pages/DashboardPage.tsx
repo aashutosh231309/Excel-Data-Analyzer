@@ -1,14 +1,32 @@
+import { useCallback } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { DashboardStats } from '@/components/dashboard/DashboardStats';
 import { FileImportCard } from '@/components/dashboard/FileImportCard';
 import { RoadmapCard } from '@/components/dashboard/RoadmapCard';
-import { StatsGrid } from '@/components/dashboard/StatsGrid';
-import { useFileSelection } from '@/hooks/useFileSelection';
+import { useDataset } from '@/state/DatasetProvider';
+import type { AppSection } from '@/lib/navigation';
+import type { ImportOutcome } from '@shared/import';
 
-/** Default screen: import a workbook and review the (still empty) statistics. */
-export function DashboardPage() {
-  const selection = useFileSelection();
+interface DashboardPageProps {
+  onNavigate: (section: AppSection) => void;
+}
+
+/** Default screen: import a workbook and review the headline figures. */
+export function DashboardPage({ onNavigate }: DashboardPageProps) {
+  const { statistics } = useDataset();
+
+  const handleImportOutcome = useCallback(
+    (outcome: ImportOutcome) => {
+      // Successful imports and valid-but-empty workbooks both have something to
+      // show on the Data screen; failures stay on the dashboard with the error.
+      if (outcome === 'imported' || outcome === 'empty') {
+        onNavigate('data');
+      }
+    },
+    [onNavigate],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -21,8 +39,8 @@ export function DashboardPage() {
           </Badge>
         }
       />
-      <FileImportCard controller={selection} />
-      <StatsGrid />
+      <FileImportCard onImported={handleImportOutcome} onOpenData={() => onNavigate('data')} />
+      <DashboardStats statistics={statistics} />
       <RoadmapCard />
     </div>
   );

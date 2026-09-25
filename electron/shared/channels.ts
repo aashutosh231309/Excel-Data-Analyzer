@@ -7,6 +7,12 @@ export const IPC_CHANNELS = {
   browseExcelFile: 'excel:browse-file',
   /** Validates a file path that arrived from a drag & drop gesture. */
   validateExcelFile: 'excel:validate-file',
+  /** Reads and normalizes the workbook behind the validated path. */
+  importWorkbook: 'excel:import-workbook',
+  /** Re-derives the records from another worksheet of the loaded workbook. */
+  selectWorksheet: 'excel:select-worksheet',
+  /** Streaming import progress notifications (main → renderer). */
+  importProgress: 'excel:import-progress',
   /** Read-only runtime information used by the Settings screen. */
   getPlatformInfo: 'app:get-platform-info',
   /** Window control commands and their state notifications. */

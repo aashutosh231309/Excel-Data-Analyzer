@@ -1,10 +1,12 @@
+import type { ImportProgress, ImportResult } from './import';
+
 /**
  * Data contracts exchanged between the renderer and the Electron main process.
  * These types are intentionally free of Node.js and Electron types so that the
  * renderer can import them without pulling any privileged API into the bundle.
  */
 
-/** Metadata about a spreadsheet the user selected (no parsing happens yet). */
+/** Metadata about a spreadsheet the user selected. */
 export interface ExcelFileSelection {
   /** File name including extension, e.g. "payments-july.xlsx". */
   name: string;
@@ -65,5 +67,11 @@ export interface ExcelDataAnalyzerApi {
     validatePath(filePath: string): Promise<ValidateFileResult>;
     /** Resolves the absolute path of a dropped `File` object. */
     resolvePath(file: File): string;
+    /** Reads and normalizes the workbook. All parsing stays in main. */
+    importWorkbook(filePath: string): Promise<ImportResult>;
+    /** Re-derives the records from another worksheet of the same workbook. */
+    selectWorksheet(filePath: string, sheetName: string): Promise<ImportResult>;
+    /** Subscribes to import progress; returns an unsubscribe callback. */
+    onImportProgress(listener: (progress: ImportProgress) => void): () => void;
   };
 }

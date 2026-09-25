@@ -68,6 +68,16 @@
     background: transparent;
   }
 
+  /* Indeterminate import bar: used only while the processed row count is unknown. */
+  @keyframes import-indeterminate {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

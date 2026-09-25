@@ -70,6 +70,7 @@ export function FileDropZone({
     <div
       role="region"
       aria-label={label}
+      aria-disabled={disabled || undefined}
       data-dragging={isDragging ? 'true' : undefined}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}

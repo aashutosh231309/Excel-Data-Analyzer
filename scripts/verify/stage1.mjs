@@ -1,90 +1,50 @@
 /**
- * Stage 1 verification harness.
+ * Stage 1 verification suite.
  *
- *   npm run verify
- *
- * Runs three groups of checks without needing a GUI:
  *   1. spreadsheet selection rules (pure logic from electron/shared)
  *   2. Electron security configuration and renderer isolation (static analysis)
  *   3. a real DOM smoke test of the renderer (React + Tailwind CSS + interactions)
+ *   4. the renderer -> preload -> main-process contract, headlessly
  *
  * The desktop shell itself is launched with `npm run dev` on a machine that can
- * run Electron; this harness covers everything that is verifiable headlessly.
+ * run Electron; this suite covers everything that is verifiable headlessly.
  */
-import { readFile, readdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
-import Module, { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
+import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as esbuild from 'esbuild';
 import { JSDOM, VirtualConsole } from 'jsdom';
+import {
+  Module,
+  bundleModule,
+  createRecorder,
+  listSourceFiles,
+  normalizeColor,
+  prepareRendererBundle,
+  readSource,
+  renderRenderer,
+  requireFromHarness,
+  root,
+  stripComments,
+} from './harness.mjs';
 
-const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const require = createRequire(import.meta.url);
-const results = [];
+/** The suite predates the shared helpers; both names refer to the same code. */
+const require = requireFromHarness;
+const bundle = bundleModule;
 
-function check(group, name, passed, detail = '') {
-  results.push({ group, name, passed: Boolean(passed), detail });
-}
+const recorder = createRecorder();
+const check = recorder.check.bind(recorder);
 
-async function bundle(entry, outfile, extra = {}) {
-  await esbuild.build({
-    entryPoints: [path.join(root, entry)],
-    outfile,
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node20',
-    logLevel: 'silent',
-    ...extra,
-  });
-  return require(outfile);
-}
-
-/** Normalises jsdom's `rgb(r g b / var(--tw-…))` output to a comparable value. */
-function normalizeColor(value) {
-  if (!value) {
-    return '';
-  }
-  const hex = value.trim().match(/^#([0-9a-f]{6})$/i);
-  if (hex) {
-    const channels = hex[1].match(/.{2}/g).map((pair) => Number.parseInt(pair, 16));
-    return `rgb(${channels.join(', ')})`;
-  }
-  const functional = value.match(/rgba?\(([^)]+)\)/);
-  if (functional) {
-    const channels = functional[1]
-      .split(/[,/\s]+/)
-      .filter(Boolean)
-      .slice(0, 3)
-      .map((channel) => Number.parseFloat(channel));
-    return `rgb(${channels.join(', ')})`;
-  }
-  return value.trim();
-}
-
-async function readSource(relativePath) {
-  return readFile(path.join(root, relativePath), 'utf8');
-}
-
-/** Removes comments so static checks inspect executable code only. */
-function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-}
-
-async function listSourceFiles(directory) {
-  const entries = await readdir(path.join(root, directory), { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const relativePath = path.posix.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await listSourceFiles(relativePath)));
-    } else if (/\.tsx?$/.test(entry.name)) {
-      files.push(relativePath);
-    }
-  }
-  return files;
+/**
+ * Runs the Stage 1 checks against `workspace` (a temporary directory) and
+ * returns the recorded results.
+ */
+export async function runStage1(workspace) {
+  await verifySelectionRules(workspace);
+  await verifySecurityConfiguration();
+  await verifyMainProcess(workspace);
+  await verifyRenderer(workspace);
+  return recorder.results;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -217,12 +177,14 @@ async function verifySecurityConfiguration() {
   );
   check(
     'security',
-    'the preload surface stays whitelisted (invoke + one state subscription)',
+    'the preload surface stays whitelisted (invoke + named subscriptions only)',
     /ipcRenderer\.invoke/.test(preload) &&
       !/ipcRenderer\.send\(|sendSync|sendToHost|ipcRenderer\.postMessage|MessageChannel/.test(
         preload,
       ) &&
-      (preload.match(/ipcRenderer\.on\(/g) ?? []).length === 1,
+      (preload.match(/ipcRenderer\.on\(/g) ?? []).length === 2 &&
+      /ipcRenderer\.on\(IPC_CHANNELS\.windowStateChanged/.test(preload) &&
+      /ipcRenderer\.on\(IPC_CHANNELS\.importProgress/.test(preload),
     `subscriptions: ${(preload.match(/ipcRenderer\.on\(/g) ?? []).length}`,
   );
   check(
@@ -286,60 +248,13 @@ async function verifySecurityConfiguration() {
 /* -------------------------------------------------------------------------- */
 
 async function verifyRenderer(workspace) {
-  const bundlePath = path.join(workspace, 'renderer-smoke.js');
-  await esbuild.build({
-    entryPoints: [path.join(root, 'src/main.tsx')],
-    outfile: bundlePath,
-    bundle: true,
-    platform: 'browser',
-    format: 'iife',
-    target: 'es2020',
-    jsx: 'automatic',
-    logLevel: 'silent',
-    define: { 'process.env.NODE_ENV': '"production"' },
-    alias: {
-      '@': path.join(root, 'src'),
-      '@shared': path.join(root, 'electron/shared'),
-    },
-    loader: { '.css': 'empty' },
-  });
-
-  const productionHtml = await readFile(path.join(root, 'dist/index.html'), 'utf8');
-  const cssFile = (await readdir(path.join(root, 'dist/assets'))).find((file) => file.endsWith('.css'));
-  const css = cssFile ? await readFile(path.join(root, 'dist/assets', cssFile), 'utf8') : '';
-
-  const virtualConsole = new VirtualConsole();
-  const consoleErrors = [];
-  virtualConsole.on('jsdomError', (error) => consoleErrors.push(error.message));
-  virtualConsole.on('error', (message) => consoleErrors.push(String(message)));
-
-  const dom = new JSDOM(productionHtml, {
-    runScripts: 'dangerously',
-    pretendToBeVisual: true,
-    url: 'http://localhost/',
-    virtualConsole,
-  });
-
-  const { window } = dom;
-  const { document } = window;
-
-  // Tailwind's compiled stylesheet, exactly as the packaged application ships it.
-  const styleTag = document.createElement('style');
-  styleTag.textContent = css;
-  document.head.appendChild(styleTag);
-
-  window.eval(await readFile(bundlePath, 'utf8'));
-
-  // React 18 schedules the initial render through the scheduler (a macrotask),
-  // so the first paint is awaited before asserting on the DOM.
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
-  await settle();
-
-  const text = () => document.body.textContent ?? '';
-  const findButtonByText = (label) =>
-    Array.from(document.querySelectorAll('button')).find((button) =>
-      (button.textContent ?? '').trim().includes(label),
-    );
+  const prepared = await prepareRendererBundle(workspace);
+  const { bundlePath, html: productionHtml, css } = prepared;
+  const rendered = await renderRenderer(prepared);
+  const { window, document, settle } = rendered;
+  const consoleErrors = rendered.errors;
+  const text = rendered.text;
+  const findButtonByText = rendered.findButton;
 
   check('renderer', 'React mounts into #root', (document.querySelector('#root')?.childElementCount ?? 0) > 0);
   check('renderer', 'no runtime errors while rendering', consoleErrors.length === 0, consoleErrors.join(' | '));
@@ -510,8 +425,8 @@ async function verifyRenderer(workspace) {
   check('renderer', 'Data screen renders its empty state', text().includes('No data loaded'));
   check(
     'renderer',
-    'placeholder controls are disabled',
-    (findButtonByText('Filters')?.hasAttribute('disabled') ?? false) === true,
+    'the data screen offers an import action instead of placeholder filters',
+    findButtonByText('Choose file') !== undefined && findButtonByText('Filters') === undefined,
   );
 
   clickNav('Settings');
@@ -552,7 +467,7 @@ async function verifyRenderer(workspace) {
 
   check('renderer', 'no runtime errors after interactions', consoleErrors.length === 0, consoleErrors.join(' | '));
 
-  dom.window.close();
+  rendered.close();
 
   await verifyDesktopBridgeFlow(bundlePath, productionHtml, css);
 }
@@ -563,8 +478,87 @@ async function verifyRenderer(workspace) {
  * launching Electron itself.
  */
 async function verifyDesktopBridgeFlow(bundlePath, html, css) {
-  const calls = { minimize: 0, toggleMaximize: 0, close: 0, browse: 0, validate: [], stateSubscribers: 0 };
+  const calls = {
+    minimize: 0,
+    toggleMaximize: 0,
+    close: 0,
+    browse: 0,
+    validate: [],
+    imported: [],
+    stateSubscribers: 0,
+    progressSubscribers: 0,
+  };
   let nextBrowseResult = { status: 'cancelled' };
+
+  /** The workbook result the mocked main process returns for an import. */
+  const workbookResult = (fileName) => ({
+    status: 'imported',
+    workbook: {
+      file: {
+        name: fileName,
+        path: `C:\\Reports\\${fileName}`,
+        extension: 'xlsx',
+        sizeInBytes: 15_360,
+        selectionId: 'bridge-1',
+      },
+      sheetName: 'Payments',
+      sheets: [
+        {
+          name: 'Payments',
+          headerRowIndex: 0,
+          dataRowCount: 2,
+          columns: [
+            { field: 'date', header: 'Date', columnIndex: 0, required: true },
+            { field: 'name', header: 'Name', columnIndex: 1, required: true },
+            { field: 'vehicleNumber', header: 'Vehicle Number', columnIndex: 2, required: true },
+            { field: 'paymentMode', header: 'Payment Mode', columnIndex: 3, required: true },
+            { field: 'amount', header: 'Amount', columnIndex: 4, required: true },
+          ],
+          missingRequiredFields: [],
+          isImportable: true,
+        },
+      ],
+      columns: [],
+      records: [
+        {
+          id: 'Payments#2',
+          rowNumber: 2,
+          date: '2026-07-01',
+          name: 'Raj Kumar',
+          vehicleNumber: 'UP32AB1234',
+          vehicleKey: 'UP32AB1234',
+          paymentMode: 'UPI',
+          amountMinor: 200000,
+          paymentReason: 'Fuel',
+          remark: '',
+          issues: [],
+        },
+        {
+          id: 'Payments#3',
+          rowNumber: 3,
+          date: '2026-07-02',
+          name: 'Sunita Devi',
+          vehicleNumber: 'UP78XY9876',
+          vehicleKey: 'UP78XY9876',
+          paymentMode: 'Cash',
+          amountMinor: 150000,
+          paymentReason: 'Repair',
+          remark: 'Paid in full',
+          issues: [],
+        },
+      ],
+      statistics: {
+        rowsScanned: 2,
+        emptyRowsIgnored: 1,
+        importedRecords: 2,
+        validRecords: 2,
+        recordsWithIssues: 0,
+        recordsWithAmount: 2,
+        totalAmountMinor: 350000,
+        averageAmountMinor: 175000,
+      },
+    },
+  });
 
   const virtualConsole = new VirtualConsole();
   const consoleErrors = [];
@@ -621,6 +615,16 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
         return nextBrowseResult;
       },
       resolvePath: () => 'C:\\Reports\\july payments.xlsx',
+      importWorkbook: async (filePath) => {
+        calls.imported.push(filePath);
+        const name = filePath.split(/[\\/]/).pop() ?? 'workbook.xlsx';
+        return workbookResult(name);
+      },
+      selectWorksheet: async () => workbookResult('july payments.xlsx'),
+      onImportProgress: () => {
+        calls.progressSubscribers += 1;
+        return () => {};
+      },
     },
   };
 
@@ -636,6 +640,7 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
     );
 
   check('bridge', 'the window state subscription is registered', calls.stateSubscribers >= 1);
+  check('bridge', 'the import progress subscription is registered', calls.progressSubscribers >= 1);
   check(
     'bridge',
     'window controls become enabled inside the desktop shell',
@@ -650,7 +655,7 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
     'bridge',
     'window controls invoke minimize / maximize / close over IPC',
     calls.minimize === 1 && calls.toggleMaximize === 1 && calls.close === 1,
-    JSON.stringify(calls),
+    JSON.stringify({ minimize: calls.minimize, toggleMaximize: calls.toggleMaximize, close: calls.close }),
   );
   check(
     'bridge',
@@ -658,7 +663,8 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
     document.querySelector('button[aria-label="Restore down"]') !== null,
   );
 
-  // Accepted file: the native dialog result is displayed without fake parsing.
+  // Accepted file: the renderer asks the main process to import it, then shows
+  // the real records — no figure is invented anywhere in this path.
   nextBrowseResult = {
     status: 'selected',
     file: {
@@ -671,13 +677,29 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
   };
   click(findButton('Browse Excel File'));
   await settle();
+  check(
+    'bridge',
+    'the import is requested from the main process with the selected path',
+    calls.imported.includes('C:\\Reports\\july payments.xlsx'),
+    calls.imported.join(' | '),
+  );
   check('bridge', 'the selected file name is displayed', text().includes('july payments.xlsx'));
+  check(
+    'bridge',
+    'the imported worksheets are shown on the data screen',
+    text().includes('worksheet Payments') || text().includes('Payments'),
+  );
+
+  // Back on the dashboard the loaded-file panel reports the real file details.
+  click(findButton('Dashboard'));
+  await settle();
   check('bridge', 'the selected file location is displayed', text().includes('C:\\Reports\\july payments.xlsx'));
   check('bridge', 'the selected file size is displayed', text().includes('15 KB'));
   check(
     'bridge',
-    'the success notification avoids claiming the data was parsed',
-    text().includes('later stage') && text().includes('Spreadsheet selected'),
+    'the loaded file panel reports the real record count and total',
+    text().includes('2 records') && text().includes('₹3,500'),
+    text().slice(0, 200),
   );
 
   // Unsupported file: rejected by the trusted main process, surfaced as an error.
@@ -686,20 +708,18 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
     fileName: 'photo.png',
     message: '"photo.png" is not a supported spreadsheet. Please choose a .xlsx or .xls file.',
   };
-  click(findButton('Choose another file'));
+  click(findButton('Replace file'));
   await settle();
   check('bridge', 'an unsupported file is rejected with an error notification', text().includes('File not accepted'));
   check('bridge', 'the rejection names the offending file', text().includes('photo.png'));
 
-  // Clear selection returns the card to its empty state.
-  nextBrowseResult = { status: 'selected', file: { name: 'a.xlsx', path: 'C:\\a.xlsx', extension: 'xlsx', sizeInBytes: 1024, selectionId: 'test-2' } };
-  click(findButton('Browse Excel File'));
+  // Clearing the dataset returns the card to its empty state.
+  click(findButton('Clear data'));
   await settle();
-  click(findButton('Clear selection'));
-  await settle();
-  check('bridge', 'clearing the selection restores the import prompt', text().includes('Upload your Excel file'));
+  check('bridge', 'clearing the dataset restores the import prompt', text().includes('Upload your Excel file'));
 
   // Drag & drop goes through the same validation path.
+  nextBrowseResult = { status: 'selected', file: { name: 'dropped.xlsx', path: 'C:\\Reports\\july payments.xlsx', extension: 'xlsx', sizeInBytes: 15_360, selectionId: 'test-2' } };
   const dropEvent = new window.Event('drop', { bubbles: true, cancelable: true });
   Object.defineProperty(dropEvent, 'dataTransfer', { value: { files: [{ name: 'dropped.xlsx' }], dropEffect: 'copy' } });
   document.querySelector('[aria-label="Excel file drop zone"]')?.dispatchEvent(dropEvent);
@@ -707,8 +727,8 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
   check(
     'bridge',
     'a dropped spreadsheet is validated by the main process',
-    calls.validate.includes('C:\\Reports\\july payments.xlsx') && text().includes('july payments.xlsx'),
-    calls.validate.join(' | '),
+    calls.validate.includes('C:\\Reports\\july payments.xlsx') && calls.imported.length >= 2,
+    `validated: ${calls.validate.join(' | ')}`,
   );
 
   check('bridge', 'no runtime errors during the desktop flow', consoleErrors.length === 0, consoleErrors.join(' | '));
@@ -724,7 +744,6 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
 
   dom.window.close();
 }
-
 
 /* -------------------------------------------------------------------------- */
 /* 4. Main process (built bundle, mocked Electron API)                        */
@@ -1011,6 +1030,7 @@ async function verifyMainProcess(workspace) {
       'main process',
       'the packaged index.html is served with its CSP',
       indexResponse.status === 200 && indexBody.includes('Content-Security-Policy'),
+      `status ${indexResponse.status}`,
     );
 
     const assets = await readdir(path.join(root, 'dist/assets'));
@@ -1020,6 +1040,7 @@ async function verifyMainProcess(workspace) {
       'main process',
       'renderer assets are served through the same scheme',
       scriptResponse.status === 200 && (await scriptResponse.text()).length > 1000,
+      `status ${scriptResponse.status}, asset ${String(scriptName)}`,
     );
 
     // A file that really exists just outside the served bundle: if the guard
@@ -1057,6 +1078,8 @@ async function verifyMainProcess(workspace) {
   const expectedChannels = [
     'excel:browse-file',
     'excel:validate-file',
+    'excel:import-workbook',
+    'excel:select-worksheet',
     'app:get-platform-info',
     'window:get-state',
     'window:minimize',
@@ -1068,6 +1091,12 @@ async function verifyMainProcess(workspace) {
     'every whitelisted IPC channel has exactly one handler',
     expectedChannels.every((channel) => state.handlers.has(channel)) && state.handlers.size === expectedChannels.length,
     `registered: ${[...state.handlers.keys()].join(', ')}`,
+  );
+  check(
+    'main process',
+    'import progress is pushed to the renderer and never invoked by it',
+    !state.handlers.has('excel:import-progress') &&
+      /webContents\.send\(IPC_CHANNELS\.importProgress/.test(await readSource('electron/main.ts')),
   );
 
   // --- native file dialog -------------------------------------------------
@@ -1216,43 +1245,3 @@ async function verifyMainProcess(workspace) {
     JSON.stringify({ quits: second.state.quitCalls, windows: second.state.windows.length }),
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Runner                                                                      */
-/* -------------------------------------------------------------------------- */
-
-const workspace = await mkdtemp(path.join(tmpdir(), 'eda-verify-'));
-
-try {
-  if (!existsSync(path.join(root, 'dist/index.html'))) {
-    console.error('dist/index.html is missing — run "npm run build" before "npm run verify".');
-    process.exit(1);
-  }
-  await verifySelectionRules(workspace);
-  await verifySecurityConfiguration();
-  await verifyMainProcess(workspace);
-  await verifyRenderer(workspace);
-} finally {
-  await rm(workspace, { recursive: true, force: true });
-}
-
-const groups = [...new Set(results.map((result) => result.group))];
-for (const group of groups) {
-  const groupResults = results.filter((result) => result.group === group);
-  const passed = groupResults.filter((result) => result.passed).length;
-  console.log(`\n${group.toUpperCase()} — ${passed}/${groupResults.length} checks passed`);
-  for (const result of groupResults) {
-    const mark = result.passed ? 'PASS' : 'FAIL';
-    const detail = !result.passed && result.detail ? `  (${result.detail})` : '';
-    console.log(`  [${mark}] ${result.name}${detail}`);
-  }
-}
-
-const failures = results.filter((result) => !result.passed);
-console.log(
-  `\n${results.length - failures.length}/${results.length} checks passed for Stage 1.${
-    failures.length > 0 ? ` ${failures.length} FAILED.` : ''
-  }`,
-);
-
-process.exit(failures.length > 0 ? 1 : 0);

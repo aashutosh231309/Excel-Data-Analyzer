@@ -7,6 +7,7 @@ import type {
   ValidateFileResult,
   WindowState,
 } from './shared/api';
+import type { ImportProgress, ImportResult } from './shared/import';
 
 /**
  * The single, explicitly whitelisted bridge between the renderer and the
@@ -37,6 +38,18 @@ const api: ExcelDataAnalyzerApi = {
     validatePath: (filePath: string): Promise<ValidateFileResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.validateExcelFile, filePath),
     resolvePath: (file: File): string => webUtils.getPathForFile(file),
+    importWorkbook: (filePath: string): Promise<ImportResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.importWorkbook, filePath),
+    selectWorksheet: (filePath: string, sheetName: string): Promise<ImportResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.selectWorksheet, filePath, sheetName),
+    onImportProgress: (listener: (progress: ImportProgress) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: ImportProgress): void =>
+        listener(progress);
+      ipcRenderer.on(IPC_CHANNELS.importProgress, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.importProgress, handler);
+      };
+    },
   },
 };
 

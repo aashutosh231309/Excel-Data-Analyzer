@@ -24,10 +24,18 @@ import {
 } from './shared/file-selection';
 import type {
   BrowseFileResult,
+  ExcelFileSelection,
   PlatformInfo,
   ValidateFileResult,
   WindowState,
 } from './shared/api';
+import type { ImportProgress, ImportResult } from './shared/import';
+import {
+  buildImportResult,
+  describeReadFailure,
+  loadWorkbook,
+  type LoadedWorkbook,
+} from './excel/workbook';
 
 /** Renderer entry points. */
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
@@ -58,6 +66,13 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * The most recently read workbook is kept in memory so that switching between
+ * worksheets does not parse the file again. It is replaced whenever a different
+ * file is imported (or when the file on disk changed).
+ */
+let workbookCache: { file: ExcelFileSelection; loaded: LoadedWorkbook } | null = null;
 
 /** Electron is single-instance: reopening the app focuses the existing window. */
 if (!app.requestSingleInstanceLock()) {
@@ -217,6 +232,74 @@ function registerIpcHandlers(): void {
     (_event, filePath: string): ValidateFileResult => validateExcelPath(filePath),
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.importWorkbook,
+    async (event, filePath: unknown): Promise<ImportResult> => {
+      const validation = validateExcelPath(filePath);
+      if (validation.status === 'rejected') {
+        return {
+          status: 'unreadable',
+          fileName: validation.fileName,
+          message: validation.message,
+        };
+      }
+
+      const file = validation.file;
+      // A new file invalidates the cached workbook immediately: the previous
+      // dataset is only replaced once the new one parsed successfully.
+      const outcome = await loadWorkbookForSession(event, file);
+      if (!outcome.ok) {
+        workbookCache = null;
+        return { status: 'unreadable', fileName: file.name, message: outcome.message };
+      }
+
+      workbookCache = outcome.entry;
+      return buildImportResult(file, outcome.entry.loaded, {
+        onProgress: createProgressReporter(event),
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.selectWorksheet,
+    async (event, filePath: unknown, sheetName: unknown): Promise<ImportResult> => {
+      const validation = validateExcelPath(filePath);
+      if (validation.status === 'rejected') {
+        return {
+          status: 'unreadable',
+          fileName: validation.fileName,
+          message: validation.message,
+        };
+      }
+      if (typeof sheetName !== 'string' || sheetName.length === 0) {
+        return {
+          status: 'unreadable',
+          fileName: validation.file.name,
+          message: 'No worksheet was selected.',
+        };
+      }
+
+      const file = validation.file;
+      const cached = workbookCache;
+      let loaded: LoadedWorkbook;
+      if (cached && cached.file.path === file.path) {
+        loaded = cached.loaded;
+      } else {
+        const outcome = await loadWorkbookForSession(event, file);
+        if (!outcome.ok) {
+          return { status: 'unreadable', fileName: file.name, message: outcome.message };
+        }
+        workbookCache = outcome.entry;
+        loaded = outcome.entry.loaded;
+      }
+
+      return buildImportResult(file, loaded, {
+        sheetName,
+        onProgress: createProgressReporter(event, 'sheet'),
+      });
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.getPlatformInfo, (): PlatformInfo => ({
     platform: process.platform,
     appVersion: app.getVersion(),
@@ -251,7 +334,8 @@ function registerIpcHandlers(): void {
 
 /**
  * Validates a candidate spreadsheet path and returns renderer-safe metadata.
- * Parsing is intentionally out of scope for Stage 1.
+ * Both the dialog result and dropped paths go through this single check before
+ * the file is ever read.
  */
 function validateExcelPath(filePath: unknown): ValidateFileResult {
   if (typeof filePath !== 'string' || filePath.trim().length === 0) {
@@ -344,6 +428,48 @@ function resolveRendererFile(requestUrl: string): string | null {
 
 function notFoundResponse(): Response {
   return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Excel import                                                               */
+/* -------------------------------------------------------------------------- */
+
+type WorkbookLoadOutcome =
+  | { ok: true; entry: { file: ExcelFileSelection; loaded: LoadedWorkbook } }
+  | { ok: false; message: string };
+
+/** Reads the workbook, reporting failure instead of rejecting the IPC call. */
+async function loadWorkbookForSession(
+  event: IpcMainInvokeEvent,
+  file: ExcelFileSelection,
+): Promise<WorkbookLoadOutcome> {
+  try {
+    const loaded = await loadWorkbook(file, { onProgress: createProgressReporter(event) });
+    return { ok: true, entry: { file, loaded } };
+  } catch (error) {
+    // Developer detail stays in the main-process log; the renderer only ever
+    // receives the readable explanation built here.
+    console.error(`[excel] import failed for ${file.name}`, error);
+    return { ok: false, message: describeReadFailure(error) };
+  }
+}
+
+/**
+ * Streams import progress to the window that asked for the import and yields
+ * the event loop, so the loading state keeps animating while a large workbook
+ * is normalized.
+ */
+function createProgressReporter(
+  event: IpcMainInvokeEvent,
+  reason: ImportProgress['reason'] = 'import',
+): (detail: Omit<ImportProgress, 'reason'>) => Promise<void> {
+  return async (detail) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    if (target && !target.isDestroyed()) {
+      target.webContents.send(IPC_CHANNELS.importProgress, { ...detail, reason } satisfies ImportProgress);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
 }
 
 /* -------------------------------------------------------------------------- */

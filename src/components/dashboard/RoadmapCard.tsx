@@ -2,18 +2,22 @@ import { Download, FileSpreadsheet, Funnel, Sigma, Sparkles, type LucideIcon } f
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { RECORD_COLUMNS } from '@/types/domain';
+import { cn } from '@/utils/cn';
 
 interface PlannedCapability {
   icon: LucideIcon;
   title: string;
   description: string;
+  /** Already delivered by the current stage. */
+  done?: boolean;
 }
 
 const PLANNED_CAPABILITIES: readonly PlannedCapability[] = [
   {
     icon: FileSpreadsheet,
     title: 'Import & normalise workbooks',
-    description: 'Read the payment records below from the selected spreadsheet.',
+    description: 'SheetJS parsing, column detection and safe normalization.',
+    done: true,
   },
   {
     icon: Funnel,
@@ -49,11 +53,24 @@ export function RoadmapCard() {
       <ul className="grid gap-4 sm:grid-cols-2">
         {PLANNED_CAPABILITIES.map((capability) => (
           <li key={capability.title} className="flex gap-3">
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-surface-border bg-surface-elevated">
-              <capability.icon className="h-4 w-4 text-content-muted" aria-hidden="true" />
+            <span
+              className={cn(
+                'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-control border',
+                capability.done
+                  ? 'border-success/30 bg-success/10'
+                  : 'border-surface-border bg-surface-elevated',
+              )}
+            >
+              <capability.icon
+                className={cn('h-4 w-4', capability.done ? 'text-success' : 'text-content-muted')}
+                aria-hidden="true"
+              />
             </span>
             <div>
-              <p className="text-[13px] font-medium text-content-secondary">{capability.title}</p>
+              <p className="text-[13px] font-medium text-content-secondary">
+                {capability.title}
+                {capability.done && <span className="ml-2 text-[11px] text-success">available</span>}
+              </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-content-muted">
                 {capability.description}
               </p>
@@ -62,8 +79,8 @@ export function RoadmapCard() {
         ))}
       </ul>
       <p className="border-t border-surface-border pt-3 text-[11px] text-content-muted">
-        Stage 1 delivers the desktop shell, the design system, secure file selection and reusable
-        UI foundations.
+        Workbooks are parsed locally in the main process and only normalised records reach the
+        interface. Filtering and exports follow in the next stages.
       </p>
     </Card>
   );

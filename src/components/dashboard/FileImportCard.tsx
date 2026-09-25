@@ -1,39 +1,125 @@
-import { CloudUpload, FileSpreadsheet, FolderOpen, X } from 'lucide-react';
+import { useCallback } from 'react';
+import {
+  CloudUpload,
+  FileSpreadsheet,
+  FolderOpen,
+  Info,
+  Table2,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { FileDropZone } from '@/components/ui/FileDropZone';
+import { ImportProgressPanel } from '@/components/dashboard/ImportProgressPanel';
+import { useDataset } from '@/state/DatasetProvider';
 import { EXCEL_EXTENSION_LABEL } from '@/lib/excel';
-import type { FileSelectionController } from '@/hooks/useFileSelection';
 import type { ExcelFileSelection } from '@shared/api';
-import { formatFileSize } from '@/utils/format';
+import { IMPORT_FIELD_LABELS, type ImportOutcome, type ImportStatistics } from '@shared/import';
+import { formatAmountMinor, formatCount, formatFileSize } from '@/utils/format';
 
 interface FileImportCardProps {
-  controller: FileSelectionController;
+  /** Called after every import attempt so the page can react (e.g. navigate). */
+  onImported?: (outcome: ImportOutcome) => void;
+  /** Opens the Data screen; only used once records are available. */
+  onOpenData?: () => void;
 }
 
 /**
- * Primary import surface of the application.
+ * Primary import surface.
  *
- * Stage 1 stops at selecting and validating the file: no workbook content is
- * read yet, and the UI says so explicitly instead of implying that data was
- * processed.
+ * It mirrors the real import state: the loading panel, the loaded file summary,
+ * the empty-workbook notice and the validation errors all come from the dataset
+ * provider, which only ever receives results from the main process.
  */
-export function FileImportCard({ controller }: FileImportCardProps) {
-  const { file, isBusy, browse, acceptDroppedFiles, clear } = controller;
+export function FileImportCard({ onImported, onOpenData }: FileImportCardProps) {
+  const {
+    status,
+    file,
+    dataset,
+    sheetName,
+    progress,
+    error,
+    emptyStatistics,
+    isBusy,
+    importFromDialog,
+    importDroppedFiles,
+    clearDataset,
+    dismissError,
+  } = useDataset();
+
+  const browse = useCallback(async () => {
+    const outcome = await importFromDialog();
+    onImported?.(outcome);
+  }, [importFromDialog, onImported]);
+
+  const drop = useCallback(
+    async (files: FileList) => {
+      const outcome = await importDroppedFiles(files);
+      onImported?.(outcome);
+    },
+    [importDroppedFiles, onImported],
+  );
+
+  const retainedError = error && dataset ? error : null;
 
   return (
-    <FileDropZone
-      label="Excel file drop zone"
-      onFilesDropped={(files) => {
-        void acceptDroppedFiles(files);
-      }}
-    >
-      {file ? (
-        <SelectedFilePanel file={file} isBusy={isBusy} onBrowse={browse} onClear={clear} />
-      ) : (
-        <ImportPrompt isBusy={isBusy} onBrowse={browse} />
+    <div className="flex flex-col gap-4">
+      <FileDropZone
+        label="Excel file drop zone"
+        disabled={isBusy}
+        onFilesDropped={(files) => {
+          void drop(files);
+        }}
+      >
+        {isBusy ? (
+          <ImportProgressPanel progress={progress} selecting={status === 'selecting'} />
+        ) : dataset && file ? (
+          <LoadedFilePanel
+            file={file}
+            sheetName={sheetName ?? dataset.sheetName}
+            statistics={dataset.statistics}
+            isBusy={isBusy}
+            onBrowse={browse}
+            onClear={clearDataset}
+            onOpenData={onOpenData}
+          />
+        ) : emptyStatistics ? (
+          <EmptyWorkbookPanel
+            file={file}
+            sheetName={sheetName}
+            statistics={emptyStatistics}
+            onBrowse={browse}
+          />
+        ) : error ? (
+          <ErrorState
+            title={error.title}
+            message={error.message}
+            items={error.missingFields.map((field) => IMPORT_FIELD_LABELS[field])}
+            itemsLabel="Missing required columns"
+            onDismiss={dismissError}
+            action={
+              <Button variant="secondary" icon={FolderOpen} onClick={() => void browse()}>
+                Choose another file
+              </Button>
+            }
+          />
+        ) : (
+          <ImportPrompt isBusy={isBusy} onBrowse={browse} />
+        )}
+      </FileDropZone>
+
+      {retainedError && (
+        <ErrorState
+          title={`${retainedError.title} — the current dataset was kept`}
+          message={`${retainedError.message} Your previously imported records are still loaded and unchanged.`}
+          items={retainedError.missingFields.map((field) => IMPORT_FIELD_LABELS[field])}
+          itemsLabel="Missing required columns"
+          onDismiss={dismissError}
+        />
       )}
-    </FileDropZone>
+    </div>
   );
 }
 
@@ -59,16 +145,27 @@ function ImportPrompt({ isBusy, onBrowse }: ImportPromptProps) {
   );
 }
 
-interface SelectedFilePanelProps {
+interface LoadedFilePanelProps {
   file: ExcelFileSelection;
+  sheetName: string;
+  statistics: ImportStatistics;
   isBusy: boolean;
   onBrowse: () => void;
   onClear: () => void;
+  onOpenData?: () => void;
 }
 
-function SelectedFilePanel({ file, isBusy, onBrowse, onClear }: SelectedFilePanelProps) {
+function LoadedFilePanel({
+  file,
+  sheetName,
+  statistics,
+  isBusy,
+  onBrowse,
+  onClear,
+  onOpenData,
+}: LoadedFilePanelProps) {
   return (
-    <div className="w-full max-w-xl text-left">
+    <div className="w-full text-left">
       <div className="flex items-center gap-4 rounded-card border border-surface-border bg-surface-elevated p-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-accent-decorative">
           <FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />
@@ -80,24 +177,114 @@ function SelectedFilePanel({ file, isBusy, onBrowse, onClear }: SelectedFilePane
           <p className="mt-1 truncate text-[11px] text-content-muted" title={file.path}>
             {file.path}
           </p>
-          <p className="mt-1.5 flex items-center gap-2 text-[11px] text-content-muted">
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-content-muted">
             <Badge variant="accent">{file.extension.toUpperCase()}</Badge>
             <span>{formatFileSize(file.sizeInBytes)}</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {formatCount(statistics.importedRecords)}{' '}
+              {statistics.importedRecords === 1 ? 'record' : 'records'}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{formatAmountMinor(statistics.totalAmountMinor)}</span>
           </p>
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-content-muted">
-        The spreadsheet is ready for analysis. Reading rows, filtering and totals are implemented in
-        the next stage — no data has been processed yet.
+      <dl className="mt-3 grid gap-x-6 gap-y-1.5 text-[11px] sm:grid-cols-2">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-content-muted">Worksheet</dt>
+          <dd className="truncate font-medium text-content-secondary">{sheetName}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-content-muted">Empty rows ignored</dt>
+          <dd className="tabular-nums text-content-secondary">
+            {formatCount(statistics.emptyRowsIgnored)}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-content-muted">Records with a valid amount</dt>
+          <dd className="tabular-nums text-content-secondary">
+            {formatCount(statistics.recordsWithAmount)}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-content-muted">Records needing attention</dt>
+          <dd className="tabular-nums text-content-secondary">
+            {formatCount(statistics.recordsWithIssues)}
+          </dd>
+        </div>
+      </dl>
+
+      {statistics.recordsWithIssues > 0 && (
+        <p className="mt-3 flex items-start gap-2 rounded-control border border-warning/30 bg-warning/5 p-2.5 text-[11px] text-content-secondary">
+          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+          <span>
+            {formatCount(statistics.recordsWithIssues)}{' '}
+            {statistics.recordsWithIssues === 1 ? 'record needs' : 'records need'} attention. Open the
+            Data screen to review the affected rows.
+          </span>
+        </p>
+      )}
+
+      <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-content-muted">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-content-muted" aria-hidden="true" />
+        <span>
+          Choosing another file replaces these records. If the new workbook cannot be read, the
+          current dataset stays loaded. The original file is never modified.
+        </span>
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        {onOpenData && (
+          <Button icon={Table2} onClick={onOpenData}>
+            Open Data screen
+          </Button>
+        )}
         <Button variant="secondary" icon={FolderOpen} loading={isBusy} onClick={onBrowse}>
-          Choose another file
+          Replace file
         </Button>
         <Button variant="ghost" icon={X} onClick={onClear}>
-          Clear selection
+          Clear data
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface EmptyWorkbookPanelProps {
+  file: ExcelFileSelection | null;
+  sheetName: string | null;
+  statistics: ImportStatistics;
+  onBrowse: () => void;
+}
+
+function EmptyWorkbookPanel({ file, sheetName, statistics, onBrowse }: EmptyWorkbookPanelProps) {
+  return (
+    <div className="w-full max-w-xl text-left">
+      <div className="flex items-center gap-4 rounded-card border border-surface-border bg-surface-elevated p-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-accent-decorative">
+          <FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-content" title={file?.name}>
+            {file?.name ?? 'Workbook'}
+          </p>
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-content-muted">
+            <Badge variant="warning">No records</Badge>
+            <span>Worksheet {sheetName ?? '—'}</span>
+            <span aria-hidden="true">·</span>
+            <span>{formatCount(statistics.rowsScanned)} data rows scanned</span>
+          </p>
+        </div>
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed text-content-muted">
+        The workbook has the expected columns but no transaction rows below the header, so nothing
+        was imported.
+      </p>
+      <div className="mt-4">
+        <Button variant="secondary" icon={FolderOpen} onClick={onBrowse}>
+          Choose another file
         </Button>
       </div>
     </div>
