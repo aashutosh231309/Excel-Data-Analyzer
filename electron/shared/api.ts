@@ -1,3 +1,4 @@
+import type { ExportProgress, ExportRequest, ExportResult } from './export';
 import type { ImportProgress, ImportResult } from './import';
 
 /**
@@ -73,5 +74,13 @@ export interface ExcelDataAnalyzerApi {
     selectWorksheet(filePath: string, sheetName: string): Promise<ImportResult>;
     /** Subscribes to import progress; returns an unsubscribe callback. */
     onImportProgress(listener: (progress: ImportProgress) => void): () => void;
+    /**
+     * Writes the given rows to an `.xlsx` file the user picks in the native save
+     * dialog. The renderer never chooses the path itself and never receives
+     * file-system access: the dialog and the write happen in the main process.
+     */
+    exportFilteredData(request: ExportRequest): Promise<ExportResult>;
+    /** Subscribes to export progress; returns an unsubscribe callback. */
+    onExportProgress(listener: (progress: ExportProgress) => void): () => void;
   };
 }

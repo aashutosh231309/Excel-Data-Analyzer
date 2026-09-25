@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { DataPage } from '@/pages/DataPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -37,11 +38,17 @@ export function AppShell() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-accent-decorative opacity-70"
           />
-          <div
-            key={activeSection}
-            className="relative mx-auto w-full max-w-[1440px] animate-fade-up px-6 py-6"
-          >
-            {renderSection(activeSection, navigate)}
+          <div className="relative mx-auto w-full max-w-[1440px] px-6 py-6">
+            {/* A rendering error is contained to the page area, so the sidebar
+                stays usable and the user can recover without restarting. */}
+            <ErrorBoundary
+              resetKey={activeSection}
+              onGoToDashboard={() => navigate('dashboard')}
+            >
+              <div key={activeSection} className="animate-fade-up">
+                {renderSection(activeSection, navigate)}
+              </div>
+            </ErrorBoundary>
           </div>
         </main>
       </div>

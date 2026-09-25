@@ -34,7 +34,8 @@ const PLANNED_CAPABILITIES: readonly PlannedCapability[] = [
   {
     icon: Download,
     title: 'Export the results',
-    description: 'Save the filtered dataset back to a spreadsheet.',
+    description: 'Save exactly the records on screen to a new .xlsx file.',
+    done: true,
   },
 ];
 
@@ -82,8 +83,9 @@ export function RoadmapCard() {
       </ul>
       <p className="border-t border-surface-border pt-3 text-[11px] text-content-muted">
         Workbooks are parsed locally in the main process and only normalised records reach the
-        interface. Filtering runs in memory; exporting the filtered results follows in the next
-        stage.
+        interface. Filtering runs in memory and the export writes nothing but the records on
+        screen — the source workbook is never modified. Record editing, presets and packaging
+        polish follow in the next stage.
       </p>
     </Card>
   );

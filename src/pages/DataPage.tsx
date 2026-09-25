@@ -9,6 +9,7 @@ import { DataTable } from '@/components/data/DataTable';
 import { DatasetStats } from '@/components/data/DatasetStats';
 import { FilterPanel } from '@/components/data/FilterPanel';
 import { FilteredSummary } from '@/components/data/FilteredSummary';
+import { ResultHeader } from '@/components/data/ResultHeader';
 import { ImportProgressPanel } from '@/components/dashboard/ImportProgressPanel';
 import { ImportSummaryPanel } from '@/components/data/ImportSummaryPanel';
 import { RecordDetailsPanel } from '@/components/data/RecordDetailsPanel';
@@ -74,18 +75,6 @@ export function DataPage({ onNavigate }: DataPageProps) {
     [selectWorksheet],
   );
 
-  const resultsSummary = useMemo(() => {
-    if (!isFiltered) {
-      return `Showing all ${formatCount(result.count)} imported records · no filters applied yet`;
-    }
-    if (result.count === 0) {
-      return 'No matching records';
-    }
-    return `Showing ${formatCount(result.count)} matching ${
-      result.count === 1 ? 'record' : 'records'
-    } · duplicates preserved`;
-  }, [isFiltered, result.count]);
-
   const subtitle = useMemo(() => {
     if (!file) {
       return 'Import a workbook to filter the records and total the matching amounts.';
@@ -120,7 +109,7 @@ export function DataPage({ onNavigate }: DataPageProps) {
               disabled={isBusy}
               onClick={chooseAnotherFile}
             >
-              {dataset ? 'Replace file' : 'Choose file'}
+              {dataset ? 'Change Excel File' : 'Choose file'}
             </Button>
           </div>
         }
@@ -175,19 +164,7 @@ export function DataPage({ onNavigate }: DataPageProps) {
           <FilterPanel />
 
           <section aria-label="Filtered results" className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-content">
-                {isFiltered ? 'Filtered results' : 'Imported records'}
-                <span aria-live="polite" className="ml-2 text-[11px] font-normal text-content-muted">
-                  {resultsSummary}
-                </span>
-              </h2>
-              <p className="text-[11px] text-content-muted">
-                {isFiltered
-                  ? 'Click a row to see the complete payment reason and remark.'
-                  : 'These are the records of the imported dataset, not a filtered subset. Click a row to see the complete payment reason and remark.'}
-              </p>
-            </div>
+            <ResultHeader fileName={file?.name ?? dataset.file.name} />
 
             <FilteredSummary result={result} />
 
@@ -208,6 +185,7 @@ export function DataPage({ onNavigate }: DataPageProps) {
                 records={result.records}
                 selectedRecordId={selectedRecord?.id ?? null}
                 onSelectRecord={handleSelectRecord}
+                recordsLabel={isFiltered ? 'matching records' : 'imported records'}
               />
             )}
           </section>

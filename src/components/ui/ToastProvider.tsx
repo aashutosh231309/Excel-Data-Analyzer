@@ -13,6 +13,9 @@ import { ToastViewport, type ToastRecord, type ToastVariant } from '@/components
 /** How long a notification stays on screen before it dismisses itself. */
 export const TOAST_DURATION_MS = 5000;
 
+/** Must match the `toast-out` animation in `tailwind.config.ts`. */
+export const TOAST_EXIT_MS = 220;
+
 export interface ToastOptions {
   title: string;
   description?: string;
@@ -33,7 +36,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const timers = useRef(new Map<string, number>());
 
-  const dismiss = useCallback((id: string) => {
+  const remove = useCallback((id: string) => {
     const timer = timers.current.get(id);
     if (timer !== undefined) {
       window.clearTimeout(timer);
@@ -41,6 +44,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
+
+  /**
+   * Fades the notification out and removes it afterwards, so dismissing one
+   * never makes the stack jump.
+   */
+  const dismiss = useCallback(
+    (id: string) => {
+      const timer = timers.current.get(id);
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+      }
+      setToasts((current) =>
+        current.map((toast) => (toast.id === id ? { ...toast, leaving: true } : toast)),
+      );
+      timers.current.set(
+        id,
+        window.setTimeout(() => remove(id), TOAST_EXIT_MS),
+      );
+    },
+    [remove],
+  );
 
   const notify = useCallback(
     ({ title, description, variant = 'info', duration = TOAST_DURATION_MS }: ToastOptions) => {

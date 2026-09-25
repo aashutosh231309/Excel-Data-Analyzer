@@ -10,6 +10,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
+  type SaveDialogOptions,
 } from 'electron';
 import { statSync } from 'node:fs';
 import path from 'node:path';
@@ -29,7 +30,17 @@ import type {
   ValidateFileResult,
   WindowState,
 } from './shared/api';
+import type { ExportProgress, ExportResult, ExportStage } from './shared/export';
+import {
+  EXPORT_FAILURE_MESSAGE,
+  EXPORT_SOURCE_FILE_MESSAGE,
+  EXPORT_STAGE_MESSAGES,
+  isSameFilePath,
+  sanitizeExportFileName,
+  validateExportRequest,
+} from './shared/export';
 import type { ImportProgress, ImportResult } from './shared/import';
+import { writeExportWorkbook } from './export/workbook';
 import {
   buildImportResult,
   describeReadFailure,
@@ -300,6 +311,73 @@ function registerIpcHandlers(): void {
     },
   );
 
+  /**
+   * Writes the rows that are currently on screen to a workbook the user picks.
+   *
+   * The renderer only sends data; the destination always comes from the native
+   * save dialog in this process, and the currently loaded workbook can never be
+   * overwritten by an export.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.exportFilteredData,
+    async (event, payload: unknown): Promise<ExportResult> => {
+      const { request, message, reason } = validateExportRequest(payload);
+      if (!request) {
+        // Nothing to write is not a failure: the caller only shows a hint.
+        return reason === 'empty' ? { status: 'empty' } : { status: 'failed', message };
+      }
+
+      const targetWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined;
+      const options: SaveDialogOptions = {
+        title: 'Export filtered data',
+        buttonLabel: 'Save',
+        defaultPath: sanitizeExportFileName(request.suggestedFileName),
+        filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }],
+        properties: ['createDirectory', 'showOverwriteConfirmation'],
+      };
+
+      sendExportProgress(event, 'preparing');
+
+      let chosenPath: string | undefined;
+      try {
+        sendExportProgress(event, 'awaiting-location');
+        const dialogResult = targetWindow
+          ? await dialog.showSaveDialog(targetWindow, options)
+          : await dialog.showSaveDialog(options);
+        if (dialogResult.canceled || !dialogResult.filePath) {
+          // Cancelling is a normal decision, never an error.
+          return { status: 'cancelled' };
+        }
+        chosenPath = dialogResult.filePath;
+      } catch (error) {
+        console.error('[excel] the save dialog could not be opened', error);
+        return { status: 'failed', message: EXPORT_FAILURE_MESSAGE };
+      }
+
+      const destination = withXlsxExtension(chosenPath);
+      const sourcePath = workbookCache?.file.path;
+      if (sourcePath && isSameFilePath(sourcePath, destination)) {
+        return { status: 'failed', message: EXPORT_SOURCE_FILE_MESSAGE };
+      }
+
+      try {
+        sendExportProgress(event, 'writing');
+        writeExportWorkbook(request.rows, request.filtered, destination);
+      } catch (error) {
+        // Developer detail stays in the main-process log; the user gets a
+        // readable explanation without any file-system internals.
+        console.error(`[excel] export failed for ${destination}`, error);
+        return { status: 'failed', message: EXPORT_FAILURE_MESSAGE };
+      }
+
+      return {
+        status: 'exported',
+        fileName: getFileName(destination),
+        recordCount: request.rows.length,
+      };
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.getPlatformInfo, (): PlatformInfo => ({
     platform: process.platform,
     appVersion: app.getVersion(),
@@ -367,6 +445,25 @@ function validateExcelPath(filePath: unknown): ValidateFileResult {
     status: 'selected',
     file: buildExcelFileSelection(filePath, sizeInBytes, createSelectionId(fileName)),
   };
+}
+
+/**
+ * Streams export progress to the window that asked for the export.
+ * The main process is the only side that knows whether it is building the sheet,
+ * waiting for the save dialog or writing the file — no percentage is invented.
+ */
+function sendExportProgress(event: IpcMainInvokeEvent, stage: ExportStage): void {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (!target || target.isDestroyed()) {
+    return;
+  }
+  const progress: ExportProgress = { stage, message: EXPORT_STAGE_MESSAGES[stage] };
+  target.webContents.send(IPC_CHANNELS.exportProgress, progress);
+}
+
+/** Guarantees the `.xlsx` extension without touching the chosen directory. */
+function withXlsxExtension(filePath: string): string {
+  return /\.xlsx$/i.test(filePath) ? filePath : `${filePath}.xlsx`;
 }
 
 /* -------------------------------------------------------------------------- */

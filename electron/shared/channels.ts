@@ -13,6 +13,10 @@ export const IPC_CHANNELS = {
   selectWorksheet: 'excel:select-worksheet',
   /** Streaming import progress notifications (main → renderer). */
   importProgress: 'excel:import-progress',
+  /** Writes the records that are currently on screen to a chosen workbook. */
+  exportFilteredData: 'excel:export-filtered-data',
+  /** Streaming export progress notifications (main → renderer). */
+  exportProgress: 'excel:export-progress',
   /** Read-only runtime information used by the Settings screen. */
   getPlatformInfo: 'app:get-platform-info',
   /** Window control commands and their state notifications. */

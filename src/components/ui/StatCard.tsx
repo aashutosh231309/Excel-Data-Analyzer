@@ -30,6 +30,11 @@ export interface StatCardModel {
   /** Formats the animated numeric value; defaults to a grouped count. */
   format?: (value: number) => string;
   tone?: StatTone;
+  /**
+   * Gives a headline figure (the filtered total) a little more presence:
+   * accent border and a soft decorative gradient, never a glow.
+   */
+  emphasis?: boolean;
 }
 
 /**
@@ -39,16 +44,36 @@ export interface StatCardModel {
  * never restart the animation. Without a dataset the tile shows a dash, so the
  * interface never invents figures.
  */
-export function StatCard({ label, value, hint, icon: Icon, format = formatCount, tone = 'default' }: StatCardModel) {
+export function StatCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  format = formatCount,
+  tone = 'default',
+  emphasis = false,
+}: StatCardModel) {
   const animatedValue = useCountUp(value);
   const hasValue = value !== null;
 
   return (
-    <Card interactive padding="lg" className="flex flex-col gap-3">
+    <Card
+      interactive
+      padding="lg"
+      className={cn('flex flex-col gap-3', emphasis && 'border-accent/40 bg-accent-decorative')}
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium text-content-secondary">{label}</p>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-control border border-surface-border bg-surface-elevated">
-          <Icon className={cn('h-4 w-4', TONE_ICON_CLASSES[tone])} aria-hidden="true" />
+        <span
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-control border bg-surface-elevated',
+            emphasis ? 'border-accent/40' : 'border-surface-border',
+          )}
+        >
+          <Icon
+            className={cn('h-4 w-4', emphasis ? 'text-accent-violet' : TONE_ICON_CLASSES[tone])}
+            aria-hidden="true"
+          />
         </span>
       </div>
       <p

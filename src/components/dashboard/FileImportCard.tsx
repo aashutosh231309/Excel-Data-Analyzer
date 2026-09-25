@@ -242,7 +242,7 @@ function LoadedFilePanel({
           </Button>
         )}
         <Button variant="secondary" icon={FolderOpen} loading={isBusy} onClick={onBrowse}>
-          Replace file
+          Change Excel File
         </Button>
         <Button variant="ghost" icon={X} onClick={onClear}>
           Clear data

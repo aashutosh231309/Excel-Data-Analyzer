@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Funnel, TrendingUp, Wallet } from 'lucide-react';
 import { useCountUp } from '@/hooks/useCountUp';
+import { cn } from '@/utils/cn';
 import type { FilteredResult } from '@/domain/filtering';
 import { PLACEHOLDER_VALUE, formatAmountMinor, formatCount } from '@/utils/format';
 
@@ -11,6 +12,8 @@ interface Metric {
   format: (value: number) => string;
   hint: string;
   icon: LucideIcon;
+  /** The primary figure of the result set gets a slightly stronger hierarchy. */
+  emphasis?: boolean;
 }
 
 interface FilteredSummaryProps {
@@ -33,7 +36,9 @@ export function FilteredSummary({ result }: FilteredSummaryProps) {
       value: result.count,
       format: formatCount,
       hint: result.isFiltered
-        ? 'Records matching every applied filter.'
+        ? `Showing ${formatCount(result.count)} matching ${
+            result.count === 1 ? 'record' : 'records'
+          } · duplicates preserved.`
         : 'No filters applied yet — every imported record is included.',
       icon: Funnel,
     },
@@ -49,6 +54,7 @@ export function FilteredSummary({ result }: FilteredSummaryProps) {
               result.amountRecords === 1 ? 'record' : 'records'
             } with a valid amount.`,
       icon: Wallet,
+      emphasis: true,
     },
     {
       id: 'filteredAverage',
@@ -64,7 +70,10 @@ export function FilteredSummary({ result }: FilteredSummaryProps) {
   ];
 
   return (
-    <div className="grid gap-px overflow-hidden rounded-card border border-surface-border bg-surface-border sm:grid-cols-3">
+    <div
+      aria-label="Filtered result figures"
+      className="grid gap-px overflow-hidden rounded-card border border-surface-border bg-surface-border sm:grid-cols-3"
+    >
       {metrics.map((metric) => (
         <MetricCell key={metric.id} metric={metric} />
       ))}
@@ -78,14 +87,27 @@ function MetricCell({ metric }: { metric: Metric }) {
   const Icon = metric.icon;
 
   return (
-    <div data-metric={metric.id} className="flex flex-col gap-1 bg-surface px-4 py-3">
+    <div
+      data-metric={metric.id}
+      data-emphasis={metric.emphasis ? 'true' : undefined}
+      className={cn(
+        'flex flex-col gap-1 px-4 py-3',
+        metric.emphasis ? 'border-t-2 border-accent/40 bg-accent-decorative' : 'bg-surface',
+      )}
+    >
       <div className="flex items-center gap-2">
         <Icon className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
         <span className="text-[11px] font-medium uppercase tracking-wider text-content-muted">
           {metric.label}
         </span>
       </div>
-      <p data-metric-value className="text-xl font-semibold tabular-nums tracking-tight text-content">
+      <p
+        data-metric-value
+        className={cn(
+          'tabular-nums tracking-tight text-content',
+          metric.emphasis ? 'text-2xl font-semibold' : 'text-xl font-semibold',
+        )}
+      >
         {hasValue && animated !== null ? metric.format(animated) : PLACEHOLDER_VALUE}
       </p>
       <p className="text-[11px] leading-relaxed text-content-muted">{metric.hint}</p>

@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { CalendarDays, Eraser, Search, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { CalendarDays, ChevronDown, ChevronUp, Eraser, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { NameCombobox } from '@/components/data/NameCombobox';
@@ -8,6 +8,7 @@ import {
   AMOUNT_MODES,
   EMPTY_FILTER_HINT,
   type AmountMode,
+  type FilterField,
 } from '@/domain/filtering';
 import { cn } from '@/utils/cn';
 import { formatDateIso } from '@/utils/format';
@@ -51,6 +52,8 @@ export function FilterPanel() {
     removeFilter,
   } = useFilters();
 
+  const [collapsed, setCollapsed] = useState(false);
+
   const formMessage = errors[0]?.message ?? null;
   const canClear = activeCount > 0 || isFiltered || errors.length > 0;
   const statusMessage =
@@ -73,21 +76,38 @@ export function FilterPanel() {
           <h2 className="text-sm font-semibold text-content">Filters</h2>
           <p className="mt-1 text-xs text-content-muted">Find exactly the records you need</p>
         </div>
-        <span
-          aria-live="polite"
-          className={cn(
-            'rounded-full border px-2.5 py-1 text-[11px] font-medium',
-            isFiltered
-              ? 'border-accent/30 bg-accent/10 text-content-secondary'
-              : 'border-surface-border bg-surface-elevated text-content-muted',
-          )}
-        >
-          {isFiltered
-            ? `${activeCount} ${activeCount === 1 ? 'filter' : 'filters'} applied`
-            : 'No filters applied yet'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            aria-live="polite"
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[11px] font-medium',
+              isFiltered
+                ? 'border-accent/30 bg-accent/10 text-content-secondary'
+                : 'border-surface-border bg-surface-elevated text-content-muted',
+            )}
+          >
+            {isFiltered
+              ? `${activeCount} ${activeCount === 1 ? 'filter' : 'filters'} applied`
+              : 'No filters applied yet'}
+          </span>
+          {/* Collapsing only hides the inputs — never which filters are active. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={collapsed ? ChevronDown : ChevronUp}
+            aria-expanded={!collapsed}
+            aria-controls="filter-body"
+            title={collapsed ? 'Expand the filter controls' : 'Collapse the filter controls'}
+            onClick={() => setCollapsed((current) => !current)}
+          >
+            {collapsed ? 'Expand' : 'Collapse'}
+          </Button>
+        </div>
       </div>
 
+      {collapsed && <CollapsedFilterSummary chips={chips} isFiltered={isFiltered} />}
+
+      <div id="filter-body" hidden={collapsed} className="flex flex-col gap-5">
       <form
         className="flex flex-col gap-5"
         noValidate
@@ -313,7 +333,7 @@ export function FilterPanel() {
         <div
           role="group"
           aria-label="Active filters"
-          className="flex animate-fade-up flex-wrap items-center gap-2 border-t border-surface-border pt-4"
+          className="flex flex-wrap items-center gap-2 border-t border-surface-border pt-4"
         >
           <span className="text-[11px] font-medium text-content-muted">Active filters</span>
           {chips.map((chip) => (
@@ -336,7 +356,46 @@ export function FilterPanel() {
           ))}
         </div>
       )}
+      </div>
     </Card>
+  );
+}
+
+const CHIP_FIELD_LABELS: Record<FilterField, string> = {
+  date: 'Date',
+  name: 'Name',
+  vehicleNumber: 'Vehicle',
+  amount: 'Amount',
+};
+
+/**
+ * Compact summary shown while the panel is collapsed: the filter count and one
+ * pill per active category, so the state stays readable without the inputs.
+ */
+function CollapsedFilterSummary({
+  chips,
+  isFiltered,
+}: {
+  chips: readonly { field: FilterField; label: string }[];
+  isFiltered: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-control border border-surface-border bg-surface-elevated/60 px-3 py-2">
+      <span aria-live="polite" className="text-[11px] text-content-secondary">
+        {isFiltered
+          ? `${chips.length} active ${chips.length === 1 ? 'filter' : 'filters'}`
+          : 'No filters applied yet'}
+      </span>
+      {chips.map((chip) => (
+        <span
+          key={chip.field}
+          title={chip.label}
+          className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-content-secondary"
+        >
+          {CHIP_FIELD_LABELS[chip.field]}
+        </span>
+      ))}
+    </div>
   );
 }
 

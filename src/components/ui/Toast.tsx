@@ -10,6 +10,8 @@ export interface ToastRecord {
   title: string;
   description?: string;
   variant: ToastVariant;
+  /** True while the exit animation runs, just before the toast is removed. */
+  leaving?: boolean;
 }
 
 const VARIANT_ICONS: Record<ToastVariant, LucideIcon> = {
@@ -63,7 +65,8 @@ function ToastItem({ toast, onDismiss }: ToastItemProps) {
       role={toast.variant === 'error' ? 'alert' : 'status'}
       className={cn(
         'pointer-events-auto flex items-start gap-3 rounded-card border border-surface-border',
-        'bg-surface-elevated p-3 shadow-raised animate-toast-in',
+        'bg-surface-elevated p-3 shadow-raised',
+        toast.leaving ? 'animate-toast-out' : 'animate-toast-in',
       )}
     >
       <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', VARIANT_ICON_CLASSES[toast.variant])} aria-hidden="true" />

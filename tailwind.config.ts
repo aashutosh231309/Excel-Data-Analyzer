@@ -69,10 +69,15 @@ export default {
           from: { opacity: '0', transform: 'translateY(10px) scale(0.98)' },
           to: { opacity: '1', transform: 'translateY(0) scale(1)' },
         },
+        'toast-out': {
+          from: { opacity: '1', transform: 'translateY(0) scale(1)' },
+          to: { opacity: '0', transform: 'translateY(8px) scale(0.99)' },
+        },
       },
       animation: {
         'fade-up': 'fade-up 380ms cubic-bezier(0.22, 1, 0.36, 1) both',
         'toast-in': 'toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'toast-out': 'toast-out 220ms cubic-bezier(0.22, 1, 0.36, 1) both',
       },
       transitionTimingFunction: {
         smooth: 'cubic-bezier(0.22, 1, 0.36, 1)',

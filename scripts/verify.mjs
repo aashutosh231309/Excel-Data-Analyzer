@@ -13,11 +13,13 @@ import { createWorkspace, printResults, removeWorkspace, root } from './verify/h
 import { runStage1 } from './verify/stage1.mjs';
 import { runStage2 } from './verify/stage2.mjs';
 import { runStage3 } from './verify/stage3.mjs';
+import { runStage4 } from './verify/stage4.mjs';
 
 const suites = [
   { name: 'Stage 1 — desktop shell', run: runStage1 },
   { name: 'Stage 2 — Excel import & data understanding', run: runStage2 },
   { name: 'Stage 3 — filtering & automatic totals', run: runStage3 },
+  { name: 'Stage 4 — filtered export & production UX', run: runStage4 },
 ];
 
 if (!existsSync(path.join(root, 'dist/index.html'))) {

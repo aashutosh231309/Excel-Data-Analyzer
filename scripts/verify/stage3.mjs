@@ -1244,7 +1244,7 @@ async function verifyFilterUi(workspace) {
       app.click(app.findButton('Browse Excel File'));
       await app.settle(80);
       reimporting = true;
-      app.click(app.findButton('Replace file'));
+      app.click(app.findButton('Change Excel File'));
       await app.settle(60);
       check(
         group,

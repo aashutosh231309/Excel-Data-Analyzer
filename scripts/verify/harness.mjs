@@ -269,6 +269,8 @@ export function createMockBridge(overrides = {}) {
     imported: [],
     selectedSheets: [],
     progressSubscribers: 0,
+    exportRequests: [],
+    exportProgressSubscribers: 0,
   };
 
   const bridge = {
@@ -316,6 +318,20 @@ export function createMockBridge(overrides = {}) {
       },
       onImportProgress: () => {
         calls.progressSubscribers += 1;
+        return () => {};
+      },
+      // The default export succeeds and echoes the row count, so tests can
+      // override only the behaviour they care about.
+      exportFilteredData: async (request) => {
+        calls.exportRequests.push(request);
+        return {
+          status: 'exported',
+          fileName: 'Filtered_Data_2026-09-25.xlsx',
+          recordCount: request.rows.length,
+        };
+      },
+      onExportProgress: () => {
+        calls.exportProgressSubscribers += 1;
         return () => {};
       },
     },

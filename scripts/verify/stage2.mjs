@@ -1131,7 +1131,7 @@ async function verifyRendererImport(workspace) {
     app.click(app.findButton('Browse Excel File'));
     await app.settle(60);
     nextResult = { status: 'unreadable', fileName: file.name, message: 'The workbook could not be read.' };
-    app.click(app.findButton('Replace file'));
+    app.click(app.findButton('Change Excel File'));
     await app.settle(60);
     check(
       group,

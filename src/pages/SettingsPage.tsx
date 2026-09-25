@@ -40,7 +40,7 @@ export function SettingsPage() {
         description="Application, runtime and privacy information"
         actions={
           <span className="text-[11px] text-content-muted">
-            Preferences and export arrive in a later stage
+            Preferences arrive in a later stage
           </span>
         }
       />

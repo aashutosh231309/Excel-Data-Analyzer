@@ -7,6 +7,7 @@ import type {
   ValidateFileResult,
   WindowState,
 } from './shared/api';
+import type { ExportProgress, ExportRequest, ExportResult } from './shared/export';
 import type { ImportProgress, ImportResult } from './shared/import';
 
 /**
@@ -48,6 +49,16 @@ const api: ExcelDataAnalyzerApi = {
       ipcRenderer.on(IPC_CHANNELS.importProgress, handler);
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.importProgress, handler);
+      };
+    },
+    exportFilteredData: (request: ExportRequest): Promise<ExportResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportFilteredData, request),
+    onExportProgress: (listener: (progress: ExportProgress) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: ExportProgress): void =>
+        listener(progress);
+      ipcRenderer.on(IPC_CHANNELS.exportProgress, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.exportProgress, handler);
       };
     },
   },

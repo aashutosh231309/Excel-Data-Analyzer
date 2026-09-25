@@ -6,12 +6,14 @@ Load a spreadsheet containing **Date, Name, Vehicle Number, Payment Mode, Amount
 and Remark**, then filter by **date, name, vehicle number and amount** with automatically
 calculated totals. Everything runs locally — no server, no database, no account, no upload.
 
-> **Stage 3 status — filtering and automatic totals.**
+> **Stage 4 status — filtered export and production UX.**
 > The application reads `.xlsx` / `.xls` workbooks locally, normalizes every value into a typed
-> record and — on top of the imported data — filters by **date, name, vehicle number and amount**
-> in any combination, with the matching **record count, total amount and average amount**
-> calculated automatically. Export, editing and presets arrive in the following stages. The
-> interface never invents figures: every number on screen comes from the parsed workbook.
+> record, filters by **date, name, vehicle number and amount** in any combination, calculates the
+> matching **record count, total amount and average amount** automatically and exports **exactly
+> the records on screen** to a new `.xlsx` file through the native Windows save dialog — the
+> source workbook is never modified or overwritten. Editing, presets, diagrams and packaging
+> polish arrive in later stages. The interface never invents figures: every number on screen comes
+> from the parsed workbook.
 
 ---
 
@@ -79,14 +81,18 @@ excel-data-analyzer/
 ├── electron/
 │   ├── main.ts                  # Window management, dialogs, IPC handlers, security policy
 │   ├── preload.ts               # contextBridge: the only renderer ↔ main surface
-│   ├── excel/                   # Parsing pipeline (main process only)
+│   ├── excel/                   # Parsing pipeline (READ ONLY — never writes to disk)
 │   │   ├── workbook.ts          # Reading, worksheet inspection, record extraction
 │   │   ├── headers.ts           # Column recognition and header-row detection
 │   │   └── dates.ts             # Excel serials, Date objects and written dates → ISO
+│   ├── export/
+│   │   └── workbook.ts          # SheetJS export: the only module that ever writes a file
 │   └── shared/                  # Contracts shared by both processes (no privileged APIs)
 │       ├── api.ts               # Request/response types + the exposed API surface
 │       ├── channels.ts          # IPC channel names
 │       ├── import.ts            # Record, statistics, issue and result contracts
+│       ├── export.ts            # Export contracts, row preparation, file-name rules
+│       ├── local-date.ts        # Local calendar-day helpers (filters and export names)
 │       ├── money.ts             # ₹-formatted text → integer paise (shared by both processes)
 │       ├── text.ts              # Name, vehicle, payment-mode and free-text rules (shared)
 │       ├── file-types.ts        # Supported extensions (.xlsx, .xls)
@@ -94,13 +100,16 @@ excel-data-analyzer/
 ├── src/
 │   ├── components/
 │   │   ├── ui/                  # Button, Card, Badge, Tooltip, EmptyState, StatCard,
-│   │   │                        # StatGrid, ErrorState, FileDropZone, PageHeader, Toast…
+│   │   │                        # StatGrid, ErrorState, ErrorBoundary, FileDropZone,
+│   │   │                        # PageHeader, Toast…
 │   │   ├── dashboard/           # FileImportCard, ImportProgressPanel, DashboardStats, RoadmapCard
 │   │   └── data/                # DataTable, DatasetStats, ValidationSummary,
 │   │                            # RecordDetailsPanel, ImportSummaryPanel, WorksheetSelector,
-│   │                            # FilterPanel, NameCombobox, FilteredSummary
-│   ├── domain/                  # Pure rules: filtering/validation/matching/totals
-│   │   └── filtering.ts         #   + local-day helpers and filter chips
+│   │                            # FilterPanel, NameCombobox, FilteredSummary, ResultHeader,
+│   │                            # ExportDataButton
+│   ├── domain/                  # Pure rules: filtering/validation/matching/totals/paging
+│   │   ├── filtering.ts         #   + local-day helpers and filter chips
+│   │   └── pagination.ts        #   + the compact page list (first/last/gap)
 │   ├── hooks/                   # useWindowControls, usePlatformInfo, useCountUp
 │   ├── layouts/                 # AppShell, TitleBar, WindowControls, Sidebar, NavItem
 │   ├── lib/                     # desktop-bridge accessor, navigation config, excel rules
@@ -118,6 +127,7 @@ excel-data-analyzer/
 │   ├── generate-icons.mjs       # Dependency-free PNG/ICO icon generator
 │   ├── verify.mjs               # Verification entry point (runs every suite)
 │   └── verify/                  # Suites + shared harness + fictional fixtures
+│       ├── stage1.mjs … stage4.mjs  # shell → import → filtering → export
 ├── build/                       # Generated app icons (icon.ico, icon.png)
 ├── electron-builder.yml         # Packaging configuration
 ├── index.html
@@ -285,13 +295,71 @@ modified and the result is deterministic.
 
 ---
 
+## Exporting to Excel
+
+**Export Excel** (next to the result header) writes *the records that are currently displayed* to a
+new workbook. It never exports a different set, and it never writes to the workbook that is open.
+
+* **What is exported** — only the current filtered result set, in the order shown, duplicates
+  included. Internal ids (`Sheet#row`), vehicle comparison keys, validation metadata and app-only
+  state never reach the file. With no filters applied the action is labelled **Export Data** and
+  says *"No filters applied — exporting all imported records."*; with an empty result it is
+  disabled with *"No records available to export."* and no workbook is created.
+* **The file** — `.xlsx`, with exactly seven columns in this order: **Date, Name, Vehicle Number,
+  Payment Mode, Amount, Payment Reason, Remark**. `Date` is a real Excel date formatted
+  `dd/mm/yyyy` (so 25/09/2026 stays 25 September and the column sorts and filters), and `Amount`
+  is a real number formatted `#,##0.00` (so it can be summed in Excel). An unreadable amount stays
+  empty instead of becoming ₹0. The sheet is named **Filtered Data** (or **Imported Data** when
+  nothing is filtered) and carries an AutoFilter over the header.
+* **The file name** — `Filtered_Data_25-09-2026.xlsx` (or `Imported_Data_…`), offered as an
+  editable default in the native save dialog. Unsafe characters and path separators are removed,
+  and the date is the local calendar day — the same day the date filter uses.
+* **The destination** — always chosen by the user in the Windows save dialog; the application never
+  saves silently. Cancelling is a normal outcome: no file, no success notification, no error, and
+  nothing else changes. The workbook that is currently loaded can never be overwritten: if the
+  chosen path is the source file, the export is refused.
+* **Feedback** — the loading state reports the real phases (**Preparing Excel…** →
+  **Saving file…**; the dialog phase is reported as *Waiting for a save location…*), the action is
+  blocked while an export runs so double clicks cannot start a second one, success shows
+  *"Export completed successfully. 24 records exported."* and a failure shows *"Export failed —
+  The filtered data could not be saved. Please choose another location and try again."* Technical
+  detail is logged in the main process for development and never rendered into the interface.
+* **How it stays safe** — the renderer prepares plain rows and calls the single whitelisted
+  preload method `excel.exportFilteredData(request)`. The save dialog, the destination and the file
+  write happen in the main process (`electron/export/workbook.ts`, the only module in the
+  application that writes a file). The renderer never receives a file-system API, never sees an
+  Electron module and never chooses a path; a path smuggled inside the payload is ignored.
+
+### Result workflow
+
+* The result header states what is on screen: *"Imported Data / Showing all 1,250 imported
+  records · No filters applied yet"* or *"Filtered Results / 24 records found · Active
+  filters: 3"*, with the source file name underneath (truncated, full name in a tooltip).
+* **Change Excel File** opens the same native picker; the new workbook is parsed and only replaces
+  the current one after a successful import. If it fails, the error is explained and the previous
+  dataset stays fully usable.
+* The filter panel can be collapsed (**Collapse** / **Expand**) to give the table more room; while
+  collapsed it still shows how many filters are active and which categories they belong to.
+* The table keeps its seven columns, adds row hover feedback, truncation with a readable tooltip
+  for long Payment Reason / Remark text, and `—` for values that are genuinely empty — an invalid
+  value stays visible with its warning marker instead.
+* Pagination shows *"Showing 1–100 of 250 matching records"* with **‹ Previous**, a compact page
+  list (first, last and the pages around the current one, with `…` for gaps), **Next ›** and the
+  page-size selector (50/100/250). The whole dataset is never rendered at once.
+* A rendering error anywhere in the main content is caught by an error boundary: the user sees
+  *"Something went wrong — The application encountered an unexpected error."* with **Try Again**
+  and **Go to Dashboard**, instead of a blank window. Nothing is deleted — the imported records,
+  the filters and the source file are untouched.
+
+---
+
 ## Verification
 
 ```bash
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **430 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **578 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -334,9 +402,44 @@ npm run verify
    `Clear Filters`, the dashboard tiles following the filters, and the pagination reset when a new
    filter replaces a larger result set. The suite also proves that filtering never returns to the
    workbook (`importWorkbook` is called exactly once).
+12. **Export rows** — what is exported and as what: the seven exported fields and nothing else
+   (no ids, no comparison keys), paise → plain numbers, empty stays empty, duplicates preserved,
+   the source records unchanged after preparing an export, the exact Excel serial numbers, the
+   file-name rules (`Filtered_Data_25-09-2026.xlsx`, unsafe characters removed, local day),
+   payload validation (malformed rows, empty result, oversized payload) and the source-file guard.
+13. **Export workbook** — the real SheetJS output is written and read back: header row and column
+   order, `A1:G…` range, amounts as numbers with `#,##0.00`, dates as serials with `dd/mm/yyyy`,
+   the sheet names, a zip-signature check, a round trip that proves 25 September stays
+   25 September, an unwritable destination, and that exporting a second file cannot change the
+   first one. The suite also proves that nothing under `electron/excel/` writes to disk and that
+   the writer lives in its own reviewed module.
+14. **Export main process** — the real `dist-electron/main.js` bundle with a mocked Electron API:
+   the save dialog (default name, xlsx filter, `createDirectory`), a successful write, the
+   progress phases, cancelling (including a blank path), the forced `.xlsx` extension, a payload
+   that tries to choose a path, refusing to overwrite the loaded workbook through case and
+   separator differences, invalid and empty payloads (dialog never opened), a dialog that throws,
+   an unwritable destination (technical detail logged, friendly message returned) and the packaged
+   preload/main bundles shipping the export.
+15. **Export UI** — the rendered action: label and wording for unfiltered, filtered and empty
+   results, the exact payload of the records on screen, the success notification, duplicate-click
+   blocking, the *Preparing Excel…* / *Saving file…* states, silence on cancel, the failure
+   notification, the screen staying usable afterwards, a throwing bridge, and the static proof that
+   no renderer module reaches Node, Electron or the file system.
+16. **Resilience** — a failed replacement import keeps the previous dataset, an invalid filter
+   value survives navigation without ever filtering, the error boundary catches a throwing
+   component (fallback copy, no stack trace in the interface, developer detail logged, **Try
+   Again** recovery) and the four notification variants share one motion system.
+17. **UX polish** — chips (labels, accessible names, immediate re-filtering), the collapsed filter
+   panel (active categories stay visible, inputs return unchanged), table header/hover/horizontal
+   scroll, truncation with tooltips, `—` versus invalid values, pagination counts for the filtered
+   dataset (`Showing 101–125 of 125 matching records`), the page-size choices and the motion
+   budget (no bounce, no per-row animation).
 
-The native window, the Windows file picker and the packaged installer need a machine that can run
-Electron: `npm run dev` on Windows, then work through the checklist below.
+The native window, the Windows file picker, the Windows save dialog, the packaged application and
+the installer need a machine that can run Electron and Windows: `npm run dev` (and
+`npm run dist:win`) on Windows, then work through the checklist below. Everything in this
+checkout is verified headlessly with a mocked Electron API — the save dialog is *not* exercised
+against the real Windows dialog here.
 
 ### Manual checklist (Windows)
 
@@ -370,6 +473,27 @@ Electron: `npm run dev` on Windows, then work through the checklist below.
   must equal the listed rows — including a worksheet with an invalid amount (never counted as ₹0).
 * With more than one page of results, move to the last page and apply a new filter → the table
   returns to page 1 and the page count follows the matches.
+* Press **Export Excel** with filters applied → the Windows save dialog appears with
+  `Filtered_Data_DD-MM-YYYY.xlsx`; save it, open the file in Excel and check that it holds exactly
+  the rows on screen, that the seven columns are in order, that `Amount` sums in Excel and that
+  `Date` shows DD/MM/YYYY.
+* Press **Export Excel** again and cancel the dialog → no file is created, no notification
+  appears and the results stay exactly as they were.
+* Try to save the export over the workbook that is loaded → the export is refused with
+  *"That is the workbook that is currently loaded…"* and the original file is unchanged.
+* Press **Export Data** without any filter → the wording explains that all imported records are
+  exported, and the file is named `Imported_Data_…`.
+* Filter until no record matches → the export button is disabled and says
+  *"No records available to export."*.
+* Click **Change Excel File** and pick a different workbook → the new records replace the old ones
+  only on success; pick a damaged file instead → the message appears and the previous dataset stays
+  usable.
+* Collapse the filter panel with **Collapse** → the active categories stay visible and the table
+  gains room; **Expand** brings the inputs back with the same values.
+* Hover a long Payment Reason / Remark → the tooltip shows the full text; hover a row → only the
+  background changes, with no movement.
+* Work through a long result set with the page numbers, `‹ Previous` / `Next ›` and the page-size
+  selector → the table never renders the whole dataset at once.
 * Switch to the Dashboard with filters applied → the tiles follow the filters; without filters they
   say *"No filters applied yet"*.
 * Minimise, maximise/restore and close the window with the custom title-bar controls.
@@ -386,9 +510,11 @@ Electron: `npm run dev` on Windows, then work through the checklist below.
 | 1     | Desktop shell, architecture, design system, file selection ✅         |
 | 2     | Workbook parsing, normalization and the data screen ✅                |
 | 3     | Filtering by date/name/vehicle/amount, totals over the filtered set ✅ |
-| 4     | Export of filtered results and preferences                           |
+| 4     | Export the filtered records to Excel, production UX and resilience ✅  |
 | 5     | Windows installer polish, icons, signing, release packaging          |
 
-Stage 3 is complete: the Data screen filters the records that are already loaded and calculates
-the matching total and average automatically. Exporting the filtered results, editing records and
-saved filter presets are the subject of the next stages and are deliberately not implemented yet.
+Stage 4 is complete: the Data screen filters the records that are already loaded, calculates the
+matching total and average automatically and exports exactly the displayed records to a new
+`.xlsx` workbook through the native save dialog. PDF export, record editing, saved filter presets,
+diagrams, accounts, cloud sync and scheduled imports remain out of scope and are deliberately not
+implemented.

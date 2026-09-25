@@ -182,9 +182,12 @@ async function verifySecurityConfiguration() {
       !/ipcRenderer\.send\(|sendSync|sendToHost|ipcRenderer\.postMessage|MessageChannel/.test(
         preload,
       ) &&
-      (preload.match(/ipcRenderer\.on\(/g) ?? []).length === 2 &&
+      // Three named subscriptions (window state, import progress, export
+      // progress) and no generic `on(channel)` escape hatch.
+      (preload.match(/ipcRenderer\.on\(/g) ?? []).length === 3 &&
       /ipcRenderer\.on\(IPC_CHANNELS\.windowStateChanged/.test(preload) &&
-      /ipcRenderer\.on\(IPC_CHANNELS\.importProgress/.test(preload),
+      /ipcRenderer\.on\(IPC_CHANNELS\.importProgress/.test(preload) &&
+      /ipcRenderer\.on\(IPC_CHANNELS\.exportProgress/.test(preload),
     `subscriptions: ${(preload.match(/ipcRenderer\.on\(/g) ?? []).length}`,
   );
   check(
@@ -452,6 +455,14 @@ async function verifyRenderer(workspace) {
   const dismissButton = document.querySelector('button[aria-label="Dismiss notification"]');
   dismissButton?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
   await settle();
+  const toastItem = document.querySelector('[role="status"], [role="alert"]');
+  check(
+    'renderer',
+    'a dismissed notification fades out before it is removed',
+    (toastItem?.className ?? '').includes('animate-toast-out'),
+    toastItem?.className ?? '',
+  );
+  await settle(260);
   check('renderer', 'notifications can be dismissed', !text().includes('Desktop shell unavailable'));
 
   const zone = document.querySelector('[aria-label="Excel file drop zone"]');
@@ -708,7 +719,7 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
     fileName: 'photo.png',
     message: '"photo.png" is not a supported spreadsheet. Please choose a .xlsx or .xls file.',
   };
-  click(findButton('Replace file'));
+  click(findButton('Change Excel File'));
   await settle();
   check('bridge', 'an unsupported file is rejected with an error notification', text().includes('File not accepted'));
   check('bridge', 'the rejection names the offending file', text().includes('photo.png'));
@@ -1080,6 +1091,7 @@ async function verifyMainProcess(workspace) {
     'excel:validate-file',
     'excel:import-workbook',
     'excel:select-worksheet',
+    'excel:export-filtered-data',
     'app:get-platform-info',
     'window:get-state',
     'window:minimize',
