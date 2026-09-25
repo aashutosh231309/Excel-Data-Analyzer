@@ -26,9 +26,13 @@ export function findArtifacts(baseDir) {
     releaseDirectory: releaseDir,
     exists: existsSync(releaseDir),
     files,
-    installer: installer ? path.join(releaseDir, path.basename(installer)) : null,
-    portable: portable ? path.join(releaseDir, path.basename(portable)) : null,
-    unpackedExecutable: unpackedExecutable ? path.join(releaseDir, unpackedExecutable) : null,
+    // `files` are relative to `baseDir`, so they still carry the output
+    // directory (`release/win-unpacked/…`). Joining them to `releaseDir` a second
+    // time produced `release\release\win-unpacked\…` and crashed the artefact
+    // checks — a defect that could only appear once an installer really existed.
+    installer: installer ? path.join(baseDir, installer) : null,
+    portable: portable ? path.join(baseDir, portable) : null,
+    unpackedExecutable: unpackedExecutable ? path.join(baseDir, unpackedExecutable) : null,
     /** The name Electron Builder would produce, from the configured template. */
     expectedInstallerName: `Excel Data Analyzer-${version}-Setup.exe`,
     expectedPortableName: `Excel Data Analyzer-${version}-Portable.exe`,

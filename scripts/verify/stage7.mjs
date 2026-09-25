@@ -27,7 +27,12 @@ import {
   stripComments,
 } from './harness.mjs';
 import { createReport, formatResults, summarize } from '../release/model.mjs';
-import { WINDOWS_REPORT_FILES, findArtifacts, inspectWindowsReport } from '../release/artifact-checks.mjs';
+import {
+  WINDOWS_REPORT_FILES,
+  findArtifacts,
+  inspectWindowsReport,
+  runArtifactChecks,
+} from '../release/artifact-checks.mjs';
 import { listRelative, loadReleaseInputs, resolvePackageFiles, toPosixPath } from './packaging.mjs';
 import { runStaticChecks } from '../release/static-checks.mjs';
 
@@ -234,6 +239,45 @@ async function verifyReleasePreflight(workspace) {
     'a report that does not name a Windows machine is not Windows evidence',
     wrongMachineReport.completed === false && wrongMachineReport.reason.includes('Windows machine'),
     wrongMachineReport.reason,
+  );
+
+  // --- artefact path resolution -------------------------------------------
+  // The artefact checks only ever ran where no installer existed, so a path bug
+  // survived until a real build: `findArtifacts` joined the output directory a
+  // second time and looked for `release/release/win-unpacked/…`, which crashed
+  // the preflight. A synthetic build output now exercises the same code path on
+  // every platform.
+  const artifactRoot = path.join(workspace, 'artifact-candidate');
+  await createReleaseCandidate(artifactRoot);
+  await mkdir(path.join(artifactRoot, 'release', 'win-unpacked'), { recursive: true });
+  const syntheticExecutable = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(2 * 1024 * 1024)]);
+  for (const relative of [
+    'release/Excel Data Analyzer-0.2.0-Setup.exe',
+    'release/Excel Data Analyzer-0.2.0-Portable.exe',
+  ]) {
+    await writeFile(path.join(artifactRoot, relative), syntheticExecutable);
+  }
+  await writeFile(
+    path.join(artifactRoot, 'release', 'win-unpacked', 'Excel Data Analyzer.exe'),
+    syntheticExecutable.subarray(0, 1024),
+  );
+
+  const resolvedArtifacts = findArtifacts(artifactRoot);
+  const artifactResults = await runArtifactChecks({ baseDir: artifactRoot });
+  const artifactFailures = artifactResults.filter((result) => result.status === 'FAIL');
+  check(
+    GROUP_PREFLIGHT,
+    'the artefact checks resolve the build output without joining it twice',
+    resolvedArtifacts.installer !== null &&
+      existsSync(resolvedArtifacts.installer) &&
+      resolvedArtifacts.portable !== null &&
+      existsSync(resolvedArtifacts.portable) &&
+      resolvedArtifacts.unpackedExecutable !== null &&
+      existsSync(resolvedArtifacts.unpackedExecutable) &&
+      artifactFailures.length === 0,
+    artifactFailures.length > 0
+      ? artifactFailures.map((result) => result.name).join('; ')
+      : `installer, portable and unpacked executable all resolved (${artifactResults.length} checks)`,
   );
 
   // --- cross-platform paths -----------------------------------------------

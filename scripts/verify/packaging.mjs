@@ -293,5 +293,11 @@ export async function packAsar({ files, destination, baseDir = root }) {
   const absolute = files.map((file) => path.join(baseDir, file));
   await asar.createPackageFromFiles(baseDir, destination, absolute);
   const listed = await asar.listPackage(destination);
-  return listed.map((entry) => entry.replace(/^\//, '').replace(/\\/g, '/')).sort();
+  // Backslashes first, then the leading separator: on Windows the entries arrive
+  // as `\dist\index.html`, and stripping `/` before normalising left a leading
+  // slash behind, which the archive checks then reported as an entry escaping the
+  // package root.
+  return listed
+    .map((entry) => entry.replace(/\\/g, '/').replace(/^\/+/, ''))
+    .sort();
 }
