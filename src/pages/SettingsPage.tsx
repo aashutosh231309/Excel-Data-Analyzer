@@ -40,7 +40,7 @@ export function SettingsPage() {
         description="Application, runtime and privacy information"
         actions={
           <span className="text-[11px] text-content-muted">
-            Preferences arrive with the data features in a later stage
+            Preferences arrive with filtering and export in a later stage
           </span>
         }
       />

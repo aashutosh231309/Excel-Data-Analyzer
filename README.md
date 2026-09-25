@@ -92,12 +92,12 @@ excel-data-analyzer/
 │       └── file-selection.ts    # Pure file-validation helpers (unit-testable)
 ├── src/
 │   ├── components/
-│   │   ├── ui/                  # Button, Card, Input, Badge, Tooltip, EmptyState, StatCard,
+│   │   ├── ui/                  # Button, Card, Badge, Tooltip, EmptyState, StatCard,
 │   │   │                        # StatGrid, ErrorState, FileDropZone, PageHeader, Toast…
 │   │   ├── dashboard/           # FileImportCard, ImportProgressPanel, DashboardStats, RoadmapCard
 │   │   └── data/                # DataTable, DatasetStats, ValidationSummary,
 │   │                            # RecordDetailsPanel, ImportSummaryPanel, WorksheetSelector
-│   ├── hooks/                   # useFileSelection, useWindowControls, usePlatformInfo, useCountUp
+│   ├── hooks/                   # useWindowControls, usePlatformInfo, useCountUp
 │   ├── layouts/                 # AppShell, TitleBar, WindowControls, Sidebar, NavItem
 │   ├── lib/                     # desktop-bridge accessor, navigation config, excel rules
 │   ├── pages/                   # DashboardPage, DataPage, SettingsPage
