@@ -23,13 +23,16 @@ records only, and release testing should not involve real personal or financial 
 | ---- | ----- |
 | Build machine | Windows 10 or 11, x64, with Node.js ≥ 20.19 and npm |
 | Build command | the sequence below, in this order |
-| Installer under test | `release/Excel Data Analyzer-0.2.0-Setup.exe` |
+| Installer under test | `release/Excel Data Analyzer-0.2.0-Setup.exe` — built locally by the command below, or downloaded from the green *Build Windows installer* run (see the README, *Getting the Windows installer*). The build made on 25/09/2026 has SHA-256 `B6398FBA22497AF2EDB80F252B4CB6741A63969012FFBEB7F13A11859CC19212`; a locally rebuilt installer will differ, so hash the file you actually test. |
 | Portable under test | `release/Excel Data Analyzer-0.2.0-Portable.exe` (optional) |
 | Excel | Microsoft Excel (any current version) or another spreadsheet application, for the export interop checks |
 | Test workbook | The prepared fictional workbooks in `validation/` — regenerate them with `node scripts/validation/windows-fixture.mjs --out validation --dated-today` so the Today and Yesterday checks have data. Every expected figure is written down in `validation/EXPECTED_RESULTS.md`. |
 
 Run these commands from the repository root before testing anything. Every one of them must be run
 for real; a skipped command is recorded as **NOT EXECUTED**, never assumed to have passed:
+
+If a Windows runner is preferred, the same commands (minus the fixture generator) run in the
+`Build Windows installer` workflow, and its artefact bundle contains the two executables.
 
 ```powershell
 npm install

@@ -14,7 +14,7 @@
 | --- | --- |
 | Application | Excel Data Analyzer 0.2.0 |
 | Application id | `com.exceldataanalyzer.app` |
-| Revision under test | `d95ba28` (Stage 8) plus the Stage 9 handoff changes recorded in section 12 |
+| Revision under test | `c2d3d18` — the revision the Windows CI build in section 16 was produced from |
 | Report written | 25/09/2026 (Stage 8); handoff completed in Stage 9 |
 | Result | **RELEASE VALIDATION PENDING** |
 
@@ -25,10 +25,10 @@
 | Windows version and build | **NOT EXECUTED** — no supported Windows release was available to this attempt |
 | Architecture | **NOT EXECUTED** — the checks ran on Linux `x86_64`, which is not Windows |
 | Application version under test | 0.2.0 (`package.json`, `electron-builder.yml`, About card, runtime report) |
-| Installer file name | **NOT EXECUTED** — no installer was produced (section 10) |
-| Installer SHA-256 | **NOT EXECUTED** — no installer to hash |
-| Portable file name and SHA-256 | **NOT EXECUTED** — no portable build was produced |
-| Build command used | `npm run build` (PASS), `npm run dist:win` (FAIL — environment, section 10) |
+| Installer file name | `Excel Data Analyzer-0.2.0-Setup.exe` — built on a Windows runner (section 16), **not yet installed or tested by a person** |
+| Installer SHA-256 | `B6398FBA22497AF2EDB80F252B4CB6741A63969012FFBEB7F13A11859CC19212` (106.8 MB, Windows CI build) |
+| Portable file name and SHA-256 | `Excel Data Analyzer-0.2.0-Portable.exe` — `6B62EC39771EDDD8A70C7EAC416D4DEA7062078720245009F9897C481F390A88` (96.0 MB) |
+| Build command used | `npm run dist:win` and `npm run dist:win:portable` on a Windows runner (PASS — section 16); `npm run dist:win` in the Linux container (FAIL — section 10) |
 | Excel version used for interoperability checks | **NOT EXECUTED** — no spreadsheet application reachable |
 | Other spreadsheet application | **NOT EXECUTED** |
 | Date tested | **NOT EXECUTED** — nothing was tested on Windows |
@@ -174,7 +174,9 @@ it is not an offline test.
 | `release/win-unpacked/` | **No** |
 
 This is an environment limitation (the sandbox cannot verify the certificate chain of the download
-host), not a defect of the application or the packaging configuration: the same command reaches
+host **and** its network blocks GitHub's release-asset hosts entirely), not a defect of the
+application or the packaging configuration: the same commands succeed on a Windows runner
+(section 16), which is how the artefacts in section 1 were produced. Specifically: the same command reaches
 `packaging platform=win32 arch=x64` and fails inside Electron Builder's downloader. Nothing was worked
 around: TLS verification was not disabled, no certificate error was ignored, no `NODE_TLS_REJECT_UNAUTHORIZED`
 was set, and no runtime was fetched manually from an unverified source. **No file from this attempt was
@@ -261,7 +263,52 @@ answer is **NOT EXECUTED**.
 been launched on Windows, no native dialog has been exercised, no exported workbook has been opened in
 Excel, and no uninstall has been performed.
 
-## 16. How to finish this report
+## 16. Windows CI build evidence (automated only — not manual validation)
+
+The development container is Linux and blocks GitHub's release-asset hosts, so Electron Builder cannot
+fetch the Windows Electron runtime there. The repository therefore carries
+[`.github/workflows/windows-installer.yml`](../.github/workflows/windows-installer.yml), which runs on
+a **real Windows runner** (`windows-latest`, Windows Server x64): it installs the dependencies, runs
+the whole automated suite on Windows, builds both artefacts, records their hashes and uploads them.
+
+| Field | Value |
+| ----- | ----- |
+| Run | `36172641063` — *Build Windows installer*, both jobs green |
+| Date | 25/09/2026 |
+| Runner | GitHub-hosted `windows-latest` (Windows Server, x64) |
+| Revision built | `c2d3d18` |
+| Job “Build the Windows installers” | **PASS** — `npm run dist:win`, `npm run dist:win:portable`, hash step, upload step, and `npm run release:check -- --static` over the real artefacts |
+| Job “Automated suite on Windows” | **PASS** — `npm run verify` (including `npm run build`) and `npx tsc --noEmit` |
+| Artefact bundle | `excel-data-analyzer-0.2.0-windows`, 202.8 MB, download from the run page |
+| `Excel Data Analyzer-0.2.0-Setup.exe` | 106.8 MB — SHA-256 `B6398FBA22497AF2EDB80F252B4CB6741A63969012FFBEB7F13A11859CC19212` |
+| `Excel Data Analyzer-0.2.0-Portable.exe` | 96.0 MB — SHA-256 `6B62EC39771EDDD8A70C7EAC416D4DEA7062078720245009F9897C481F390A88` |
+
+**What this proves.** On real Windows: the dependencies install, the project builds, the entire
+automated suite passes, Electron Builder produces both artefacts under the configured names, the
+artefact checks accept them (name, version, PE header, plausible size, portable name) and the release
+preflight reports no automatic blocker. It also proves the packaging tooling itself is
+platform-independent.
+
+**What this does not prove.** No installer was executed, no window was opened, no dialog was used, no
+exported workbook was opened in Excel, nothing was uninstalled and no SmartScreen warning was
+observed. A CI runner is headless: it cannot answer a single item of the manual checklist. Sections
+3–9 stay **NOT EXECUTED** for exactly that reason, and the release decision stays
+**RELEASE VALIDATION PENDING**.
+
+**Defects this found and how they were fixed.** The Windows run was not decorative — it caught four
+defects that Linux could not, all in the release tooling, none in the application:
+
+| # | Defect | Effect on Windows | Fix |
+| - | ------ | ----------------- | --- |
+| 5 | Paths built with `path.join` and compared against forward-slash patterns (`resolvePackageFiles`, the packaging suite's walker) | 13 checks failed: required files and renderer assets "missing", archive contents mismatched, and every tamper check refused to conclude | `toPosixPath` normalises every path the tooling returns; regression check added |
+| 6 | `findArtifacts` joined the production directory to the already-relative file list | `release/release/win-unpacked/…` — the artefact checks crashed with ENOENT the moment an installer existed | joins the inspected root; synthetic-artefact regression check added |
+| 7 | `packAsar` stripped the leading `/` before normalising `\` | Archive entries kept a leading separator and were reported as escaping the package root | normalise first, then strip; covered by the existing archive checks |
+| 8 | The workflow's first version ran the suite before the build, so a suite failure cost the artefacts | No installer could be downloaded from a run whose suite failed | the build and the suite are separate jobs; annotate failures as `::error::` so they are readable without the raw log |
+
+The four defects moved the suite from 801 to 803 checks (two regression checks were added); no
+assertion was weakened and no application code was touched.
+
+## 17. How to finish this report
 
 1. Build on Windows, in this order: `npm install`, `npm run verify`, `npx tsc --noEmit`,
    `npm run build`, `node scripts/validation/windows-fixture.mjs --out validation --dated-today`,

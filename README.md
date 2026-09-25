@@ -90,6 +90,35 @@ mode and opens the desktop window against the dev server.
 | `npm run dist:win:portable` | Portable Windows single-file build (no installation)          |
 | `npm run dist:linux`      | Linux AppImage (for local packaging checks)                     |
 
+### Getting the Windows installer
+
+The installer can be produced in two ways. Neither of them is Windows *validation*: installing,
+launching and exercising the application on a Windows desktop is still the manual checklist below,
+and until that happens the release stays **RELEASE VALIDATION PENDING**.
+
+**1. Download a build made on a Windows machine (no Windows PC needed).** The
+[`Build Windows installer`](.github/workflows/windows-installer.yml) workflow runs on a real Windows
+runner: it installs the dependencies, runs the whole automated suite on Windows, builds the NSIS
+installer and the portable executable, records their SHA-256 hashes and uploads them.
+
+1. Open the **[Actions](../../actions/workflows/windows-installer.yml)** tab of the repository.
+2. Pick the newest green run of *Build Windows installer*.
+3. Download the **`excel-data-analyzer-0.2.0-windows`** artefact at the bottom of the run page.
+4. Unzip it — it holds `Excel Data Analyzer-0.2.0-Setup.exe` and `Excel Data Analyzer-0.2.0-Portable.exe`.
+
+The hashes of the files from the green run of 25/09/2026 are:
+
+| File | Size | SHA-256 |
+| ---- | ---- | ------- |
+| `Excel Data Analyzer-0.2.0-Setup.exe` | 106.8 MB | `B6398FBA22497AF2EDB80F252B4CB6741A63969012FFBEB7F13A11859CC19212` |
+| `Excel Data Analyzer-0.2.0-Portable.exe` | 96.0 MB | `6B62EC39771EDDD8A70C7EAC416D4DEA7062078720245009F9897C481F390A88` |
+
+Verify a download with `Get-FileHash ".\Excel Data Analyzer-0.2.0-Setup.exe" -Algorithm SHA256`.
+A locally rebuilt installer will **not** have these hashes — record your own in the release report.
+
+**2. Build it yourself on Windows.** Follow the commands below on a Windows machine; the files appear
+in `release/`.
+
 ### Building the Windows application
 
 ```bash
@@ -208,6 +237,8 @@ excel-data-analyzer/
 │   │   └── stage1.mjs … stage7.mjs  # shell → import → filtering → export → analytics → packaging → release
 │   └── validation/
 │       └── windows-fixture.mjs  # Writes the fictional workbooks used by the Windows QA run
+├── .github/workflows/
+│   └── windows-installer.yml    # Builds the installer on a Windows runner and uploads it
 ├── build/                       # Generated app icons (icon.ico, icon.png, icons/)
 ├── docs/                        # Windows release checklist, QA report template and report
 ├── validation/                  # Fictional Windows validation workbooks + expected figures
@@ -482,7 +513,7 @@ Electron, and is memoized in `AnalyticsProvider` so nothing is recalculated per 
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **801 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **803 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -638,6 +669,11 @@ network, and never disables a security control to make a step succeed.
 > installer runtime. Electron Builder additionally cannot download the Windows Electron runtime in
 > this sandbox (`npm run dist:win` → *unable to verify the first certificate*), and that limitation
 > is left untouched rather than bypassed by disabling certificate verification.
+
+A Windows runner does build and test the project: the `Build Windows installer` workflow produces
+the installer and portable executable and runs the whole automated suite on Windows. That is real
+Windows evidence for the build, the artefact naming and the automated checks — and it is still not
+the manual checklist, so it does not change the status below.
 
 The last attempt to run the Windows stage is recorded honestly in
 [`docs/WINDOWS_RELEASE_REPORT-0.2.0.md`](docs/WINDOWS_RELEASE_REPORT-0.2.0.md): every Windows item in
