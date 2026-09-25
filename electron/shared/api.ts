@@ -1,0 +1,88 @@
+import type { ExportProgress, ExportRequest, ExportResult } from './export';
+import type { ImportProgress, ImportResult } from './import';
+
+/**
+ * Data contracts exchanged between the renderer and the Electron main process.
+ * These types are intentionally free of Node.js and Electron types so that the
+ * renderer can import them without pulling any privileged API into the bundle.
+ */
+
+/** Metadata about a spreadsheet the user selected. */
+export interface ExcelFileSelection {
+  /** File name including extension, e.g. "payments-july.xlsx". */
+  name: string;
+  /**
+   * Absolute path of the selected workbook, validated by the main process.
+   * Passing it through the whitelisted bridge is what lets later stages read the
+   * workbook in the main process without giving the renderer file-system access.
+   */
+  path: string;
+  /** Lower-cased extension without the dot, e.g. "xlsx". */
+  extension: string;
+  /** File size in bytes. */
+  sizeInBytes: number;
+  /** Opaque identifier the renderer can use as a React key. */
+  selectionId: string;
+}
+
+export type BrowseFileResult =
+  | { status: 'selected'; file: ExcelFileSelection }
+  | { status: 'cancelled' }
+  | { status: 'rejected'; fileName?: string; message: string };
+
+export type ValidateFileResult =
+  | { status: 'selected'; file: ExcelFileSelection }
+  | { status: 'rejected'; fileName?: string; message: string };
+
+export interface WindowState {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+}
+
+export interface PlatformInfo {
+  /** Application name as reported by Electron (`app.getName()`). */
+  appName: string;
+  platform: string;
+  appVersion: string;
+  electronVersion: string;
+  chromeVersion: string;
+  nodeVersion: string;
+  isPackaged: boolean;
+}
+
+/** The complete API surface exposed to the renderer through `contextBridge`. */
+export interface ExcelDataAnalyzerApi {
+  app: {
+    getPlatformInfo(): Promise<PlatformInfo>;
+  };
+  window: {
+    getState(): Promise<WindowState>;
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<WindowState>;
+    close(): Promise<void>;
+    /** Subscribes to window state changes; returns an unsubscribe callback. */
+    onStateChanged(listener: (state: WindowState) => void): () => void;
+  };
+  excel: {
+    /** Opens the native file dialog; returns a validated selection. */
+    browse(): Promise<BrowseFileResult>;
+    /** Validates a file path that arrived from drag & drop or the dialog. */
+    validatePath(filePath: string): Promise<ValidateFileResult>;
+    /** Resolves the absolute path of a dropped `File` object. */
+    resolvePath(file: File): string;
+    /** Reads and normalizes the workbook. All parsing stays in main. */
+    importWorkbook(filePath: string): Promise<ImportResult>;
+    /** Re-derives the records from another worksheet of the same workbook. */
+    selectWorksheet(filePath: string, sheetName: string): Promise<ImportResult>;
+    /** Subscribes to import progress; returns an unsubscribe callback. */
+    onImportProgress(listener: (progress: ImportProgress) => void): () => void;
+    /**
+     * Writes the given rows to an `.xlsx` file the user picks in the native save
+     * dialog. The renderer never chooses the path itself and never receives
+     * file-system access: the dialog and the write happen in the main process.
+     */
+    exportFilteredData(request: ExportRequest): Promise<ExportResult>;
+    /** Subscribes to export progress; returns an unsubscribe callback. */
+    onExportProgress(listener: (progress: ExportProgress) => void): () => void;
+  };
+}

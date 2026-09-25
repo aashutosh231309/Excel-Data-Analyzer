@@ -1,0 +1,140 @@
+# Builds the Windows release artefacts on a real Windows machine.
+#
+# Why this file exists: the development container used for this project is Linux
+# and its network blocks GitHub's release-asset hosts, so Electron Builder cannot
+# download the Windows Electron runtime there (`unable to verify the first
+# certificate` / connection reset). A Windows runner can, so this workflow builds
+# the real installer and portable executable and uploads them as build artefacts
+# that can be downloaded from the run page.
+#
+# What a green run proves: the project installs, builds and passes its whole
+# automated suite on Windows, and the installer and portable file are produced by
+# Electron Builder with their SHA-256 hashes recorded in the log.
+#
+# What it does NOT prove: the manual checks in docs/WINDOWS_RELEASE_CHECKLIST.md
+# (installation, Start-menu launch, native file/save dialogs, Excel
+# interoperability, offline use, uninstall, SmartScreen). Those need a person at a
+# Windows desktop. The release stays RELEASE VALIDATION PENDING until they are
+# executed and docs/WINDOWS_RELEASE_REPORT-0.2.0.md records them.
+name: Build Windows installer
+
+on:
+  # Run by hand from the Actions tab once this file is on the default branch.
+  workflow_dispatch:
+  # Run automatically when the build inputs change on the validation branch, so
+  # the artefacts are refreshed without anyone remembering to press the button.
+  push:
+    branches:
+      - arena/01a0d8f5-excel-data-analyzer
+    paths:
+      - '.github/workflows/windows-installer.yml'
+      - 'electron-builder.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'index.html'
+      - 'build/**'
+      - 'electron/**'
+      - 'src/**'
+      - 'scripts/**'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'tailwind.config.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  # The artefacts come first and are independent of the automated suite, so a
+  # failure in the suite can never cost you the files it can still build.
+  installers:
+    name: Build the Windows installers
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the NSIS installer
+        run: npm run dist:win
+
+      - name: Build the portable executable
+        run: npm run dist:win:portable
+
+      - name: Record the artefacts and their SHA-256 hashes
+        shell: pwsh
+        run: |
+          Write-Host "== release/ =="
+          Get-ChildItem ".\release" | Select-Object Name, Length | Format-Table -AutoSize
+          Write-Host "== SHA-256 =="
+          Get-ChildItem ".\release\*.exe" | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            Write-Host ("SHA256  {0}  {1}" -f $hash, $_.Name)
+          }
+
+      - name: Upload the Windows artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: excel-data-analyzer-0.2.0-windows
+          path: |
+            release/*Setup.exe
+            release/*Portable.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      # With the real files present, the five artefact checks stop saying
+      # NOT EXECUTED and inspect the installer that was just built.
+      - name: Release preflight over the real artefacts
+        run: npm run release:check -- --static
+
+  # The full suite on Windows. Its failures are surfaced as annotations, because
+  # a failed step's log is not always reachable from outside the repository.
+  verification:
+    name: Automated suite on Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and run every automated check
+        shell: pwsh
+        run: |
+          # Mark the exact check that failed as an annotation, so it is visible
+          # without opening the raw log.
+          npm run verify 2>&1 | Tee-Object -FilePath verify.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $failures = Select-String -Path verify.log -Pattern '[FAIL]' -SimpleMatch |
+              Select-Object -First 8
+            foreach ($failure in $failures) {
+              Write-Host ("::error::FAILED ON WINDOWS: " + $failure.Line.Trim())
+            }
+            $tail = Get-Content verify.log -Tail 12
+            Write-Host ("::error::" + ($tail -join ' | '))
+            exit $code
+          }
+
+      - name: Type check
+        run: npx tsc --noEmit

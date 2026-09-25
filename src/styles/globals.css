@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* The application ships a single light theme; native form controls and
+       scrollbars follow it. */
+    color-scheme: light;
+    /* Inter is bundled locally (offline first); the rest of the stack mirrors
+       the design system fallback chain. */
+    font-family: 'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      sans-serif;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply overflow-hidden bg-background font-sans text-sm text-content antialiased;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Smooth scrolling for the internal scroll containers only: the window itself
+     never scrolls, so the desktop layout stays stable while data areas scroll. */
+  .scroll-smooth-y {
+    scroll-behavior: smooth;
+    overscroll-behavior: contain;
+  }
+
+  /*
+   * Keyboard focus is always visible. Components that declare their own
+   * `focus-visible:ring-*` treatment keep a single, cleaner indicator; every
+   * other focusable element falls back to this outline.
+   */
+  :focus-visible:not([class*='focus-visible:ring']) {
+    outline: 2px solid theme('colors.accent.DEFAULT');
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgba(79, 70, 229, 0.18);
+  }
+
+  /* Themed scrollbars that match the light surfaces. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.surface.border');
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #C3C9D2;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Indeterminate import bar: used only while the processed row count is unknown. */
+  @keyframes import-indeterminate {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Frameless window support: the title bar is the window dragging surface. */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
