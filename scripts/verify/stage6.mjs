@@ -39,6 +39,7 @@ import {
   loadReleaseInputs,
   packAsar,
   resolvePackageFiles,
+  toPosixPath,
   validateConfigAgainstSchema,
   windowsTargets,
 } from './packaging.mjs';
@@ -627,10 +628,12 @@ function walkRelative(directory) {
   if (!existsSync(directory)) {
     return [];
   }
+  // Forward slashes on every platform: the checks below match paths such as
+  // `assets/index.js`, and Windows would otherwise produce `assets\index.js`.
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
     return entry.isDirectory()
-      ? walkRelative(full).map((nested) => path.join(entry.name, nested))
+      ? walkRelative(full).map((nested) => toPosixPath(path.join(entry.name, nested)))
       : [entry.name];
   });
 }

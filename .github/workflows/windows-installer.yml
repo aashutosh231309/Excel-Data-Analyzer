@@ -78,7 +78,11 @@ jobs:
           Write-Host "== SHA-256 =="
           Get-ChildItem ".\release\*.exe" | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            $size = [math]::Round($_.Length / 1MB, 1)
             Write-Host ("SHA256  {0}  {1}" -f $hash, $_.Name)
+            # Also published as an annotation, so the hash of the file a tester
+            # signs off can be read without opening the raw log.
+            Write-Host ("::notice title=$($_.Name) SHA-256::$hash ($size MB)")
           }
 
       - name: Upload the Windows artefacts
@@ -96,7 +100,20 @@ jobs:
       # With the real files present, the five artefact checks stop saying
       # NOT EXECUTED and inspect the installer that was just built.
       - name: Release preflight over the real artefacts
-        run: npm run release:check -- --static
+        shell: pwsh
+        run: |
+          npm run release:check -- --static 2>&1 | Tee-Object -FilePath preflight.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $failures = Select-String -Path preflight.log -Pattern '[FAIL]' -SimpleMatch |
+              Select-Object -First 8
+            foreach ($failure in $failures) {
+              Write-Host ("::error::PREFLIGHT FAILED ON WINDOWS: " + $failure.Line.Trim())
+            }
+            $tail = Get-Content preflight.log -Tail 12
+            Write-Host ("::error::" + ($tail -join ' | '))
+            exit $code
+          }
 
   # The full suite on Windows. Its failures are surfaced as annotations, because
   # a failed step's log is not always reachable from outside the repository.

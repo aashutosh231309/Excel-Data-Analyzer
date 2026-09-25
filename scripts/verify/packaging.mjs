@@ -62,6 +62,18 @@ export function stripComments(source) {
 }
 
 /** Lists the repository-relative files under a directory of a candidate root. */
+/**
+ * Every path this module returns is compared against forward-slash patterns:
+ * `dist/assets/…`, the `!`-prefixed exclusion patterns, and the expected
+ * artefact names. Windows produces backslashes from `path.join`/`path.relative`,
+ * which silently broke those comparisons — the release checks failed on a
+ * Windows runner while passing on Linux. Normalising in one place keeps the
+ * checks platform-independent.
+ */
+export function toPosixPath(value) {
+  return value.replace(/\\/g, '/');
+}
+
 export function listRelative(baseDir, relativeDirectory) {
   const directory = path.join(baseDir, relativeDirectory);
   if (!existsSync(directory)) {
@@ -72,7 +84,7 @@ export function listRelative(baseDir, relativeDirectory) {
       const full = path.join(current, entry.name);
       return entry.isDirectory()
         ? walk(full)
-        : [path.relative(baseDir, full).split(path.sep).join('/')];
+        : [toPosixPath(path.relative(baseDir, full))];
     });
   return walk(directory).sort();
 }
@@ -220,7 +232,7 @@ export function resolvePackageFiles({ baseDir = root, patterns }) {
         continue;
       }
       for (const file of walk(directory)) {
-        included.push(path.relative(baseDir, path.join(directory, file)));
+        included.push(toPosixPath(path.relative(baseDir, path.join(directory, file))));
       }
       continue;
     }
@@ -233,7 +245,7 @@ export function resolvePackageFiles({ baseDir = root, patterns }) {
       problems.push(`the configured file ${pattern} does not exist`);
       continue;
     }
-    included.push(pattern);
+    included.push(toPosixPath(pattern));
   }
 
   const excluded = patterns.filter((pattern) => pattern.startsWith('!')).map((pattern) => pattern.slice(1));

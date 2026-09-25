@@ -28,6 +28,7 @@ import {
 } from './harness.mjs';
 import { createReport, formatResults, summarize } from '../release/model.mjs';
 import { WINDOWS_REPORT_FILES, findArtifacts, inspectWindowsReport } from '../release/artifact-checks.mjs';
+import { listRelative, loadReleaseInputs, resolvePackageFiles, toPosixPath } from './packaging.mjs';
 import { runStaticChecks } from '../release/static-checks.mjs';
 
 const GROUP_PREFLIGHT = 'release preflight';
@@ -233,6 +234,37 @@ async function verifyReleasePreflight(workspace) {
     'a report that does not name a Windows machine is not Windows evidence',
     wrongMachineReport.completed === false && wrongMachineReport.reason.includes('Windows machine'),
     wrongMachineReport.reason,
+  );
+
+  // --- cross-platform paths -----------------------------------------------
+  // The release checks compare file paths against forward-slash patterns
+  // (`dist/assets/…`, the expected artefact names, the exclusion patterns). On a
+  // Windows runner `path.join`/`path.relative` return backslashes, which made
+  // those comparisons fail there while passing on Linux — the checks were green
+  // here and 13 of them failed on Windows. `toPosixPath` is the single place that
+  // normalises them, and this check fails if it is ever bypassed.
+  const crossPlatformProof = (() => {
+    const windowsStyle = toPosixPath('dist\\assets\\index-abc123.js');
+    const mixed = toPosixPath(path.join('dist-electron', 'main.js'));
+    const { config } = loadReleaseInputs(root);
+    const resolved = resolvePackageFiles({ baseDir: root, patterns: config.files ?? [] });
+    const walked = [...listRelative(root, 'dist'), ...listRelative(root, 'dist-electron')];
+    const withBackslashes = [...resolved.files, ...walked].filter((file) => file.includes('\\'));
+    return {
+      passed:
+        windowsStyle === 'dist/assets/index-abc123.js' &&
+        !mixed.includes('\\') &&
+        resolved.files.includes('dist-electron/main.js') &&
+        resolved.files.includes('dist/index.html') &&
+        withBackslashes.length === 0,
+      detail: `${resolved.files.length} packaged files, ${withBackslashes.length} with backslashes`,
+    };
+  })();
+  check(
+    GROUP_PREFLIGHT,
+    'package paths are compared with forward slashes on every platform',
+    crossPlatformProof.passed,
+    crossPlatformProof.detail,
   );
 
   // --- tamper detection ---------------------------------------------------
