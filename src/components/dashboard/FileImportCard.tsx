@@ -13,11 +13,12 @@ import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { FileDropZone } from '@/components/ui/FileDropZone';
 import { ImportProgressPanel } from '@/components/dashboard/ImportProgressPanel';
+import { useAnalytics, type SessionState } from '@/state/AnalyticsProvider';
 import { useDataset } from '@/state/DatasetProvider';
 import { EXCEL_EXTENSION_LABEL } from '@/lib/excel';
 import type { ExcelFileSelection } from '@shared/api';
 import { IMPORT_FIELD_LABELS, type ImportOutcome, type ImportStatistics } from '@shared/import';
-import { formatAmountMinor, formatCount, formatFileSize } from '@/utils/format';
+import { formatAmountMinor, formatCount, formatDateTimeLocal, formatFileSize } from '@/utils/format';
 
 interface FileImportCardProps {
   /** Called after every import attempt so the page can react (e.g. navigate). */
@@ -42,12 +43,15 @@ export function FileImportCard({ onImported, onOpenData }: FileImportCardProps) 
     progress,
     error,
     emptyStatistics,
+    loadedAt,
     isBusy,
     importFromDialog,
     importDroppedFiles,
     clearDataset,
     dismissError,
   } = useDataset();
+
+  const { session } = useAnalytics();
 
   const browse = useCallback(async () => {
     const outcome = await importFromDialog();
@@ -77,9 +81,11 @@ export function FileImportCard({ onImported, onOpenData }: FileImportCardProps) 
           <ImportProgressPanel progress={progress} selecting={status === 'selecting'} />
         ) : dataset && file ? (
           <LoadedFilePanel
-            file={file}
+            file={dataset.file}
             sheetName={sheetName ?? dataset.sheetName}
             statistics={dataset.statistics}
+            loadedAt={loadedAt}
+            session={session}
             isBusy={isBusy}
             onBrowse={browse}
             onClear={clearDataset}
@@ -149,6 +155,10 @@ interface LoadedFilePanelProps {
   file: ExcelFileSelection;
   sheetName: string;
   statistics: ImportStatistics;
+  /** When the records currently loaded were read. */
+  loadedAt: number | null;
+  /** What the user is looking at, so the source card can say it. */
+  session: SessionState;
   isBusy: boolean;
   onBrowse: () => void;
   onClear: () => void;
@@ -159,14 +169,16 @@ function LoadedFilePanel({
   file,
   sheetName,
   statistics,
+  loadedAt,
+  session,
   isBusy,
   onBrowse,
   onClear,
   onOpenData,
 }: LoadedFilePanelProps) {
   return (
-    <div className="w-full text-left">
-      <div className="flex items-center gap-4 rounded-card border border-surface-border bg-surface-elevated p-4">
+    <div className="w-full text-left" data-source-card data-session-state={session.id}>
+      <div className="flex items-center gap-4 rounded-card border border-surface-border bg-surface p-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-accent-decorative">
           <FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />
         </span>
@@ -174,8 +186,11 @@ function LoadedFilePanel({
           <p className="truncate text-[13px] font-medium text-content" title={file.name}>
             {file.name}
           </p>
-          <p className="mt-1 truncate text-[11px] text-content-muted" title={file.path}>
-            {file.path}
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-content-muted">
+            <Badge variant={session.tone === 'warning' ? 'warning' : session.tone === 'accent' ? 'accent' : 'neutral'}>
+              {session.label}
+            </Badge>
+            <span>Loaded {formatDateTimeLocal(loadedAt)}</span>
           </p>
           <p className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-content-muted">
             <Badge variant="accent">{file.extension.toUpperCase()}</Badge>

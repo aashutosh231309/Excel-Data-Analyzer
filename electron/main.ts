@@ -51,7 +51,7 @@ import {
 /** Renderer entry points. */
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const RENDERER_DIST = path.join(__dirname, '../dist');
-const BACKGROUND_COLOR = '#0B1020';
+const BACKGROUND_COLOR = '#F4F5F7';
 
 /**
  * The packaged renderer is served from a privileged `app://` scheme instead of
@@ -100,7 +100,8 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
-    nativeTheme.themeSource = 'dark';
+    // The interface is a light workspace; native scrollbars and dialogs follow.
+    nativeTheme.themeSource = 'light';
     lockDownPermissions();
     registerRendererProtocol();
     registerIpcHandlers();

@@ -6,14 +6,19 @@ Load a spreadsheet containing **Date, Name, Vehicle Number, Payment Mode, Amount
 and Remark**, then filter by **date, name, vehicle number and amount** with automatically
 calculated totals. Everything runs locally — no server, no database, no account, no upload.
 
-> **Stage 4 status — filtered export and production UX.**
+> **Stage 5 status — the analytics workspace, data quality insights and session UX.**
 > The application reads `.xlsx` / `.xls` workbooks locally, normalizes every value into a typed
 > record, filters by **date, name, vehicle number and amount** in any combination, calculates the
 > matching **record count, total amount and average amount** automatically and exports **exactly
 > the records on screen** to a new `.xlsx` file through the native Windows save dialog — the
-> source workbook is never modified or overwritten. Editing, presets, diagrams and packaging
-> polish arrive in later stages. The interface never invents figures: every number on screen comes
-> from the parsed workbook.
+> source workbook is never modified or overwritten. On top of that, the Dashboard now describes
+> the imported workbook: baseline statistics, a payment-mode breakdown, an application-defined
+> amount distribution, a data-quality summary and an informational duplicate insight — all of them
+> calculated once from the records that are already in memory. A quality or duplicate insight opens
+> the affected rows in the existing table without filtering, editing or deleting anything.
+> Record editing, filter presets, diagrams and packaging polish are deliberately not part of this
+> build. The interface never invents figures: every number on screen comes from the parsed
+> workbook.
 
 ---
 
@@ -23,7 +28,7 @@ calculated totals. Everything runs locally — no server, no database, no accoun
 | ----------------- | --------------------------------------------- |
 | Desktop shell     | Electron 44 + Electron Builder 26             |
 | Frontend          | React 18 + Vite 7 + TypeScript 5 (strict)     |
-| Styling           | Tailwind CSS 3 (dark design system)           |
+| Styling           | Tailwind CSS 3 (light design system)          |
 | Icons             | Lucide React                                  |
 | Spreadsheet engine| SheetJS (`xlsx`) — parsing runs in the Electron main process |
 | Fonts             | Inter (bundled locally via `@fontsource-variable`) |
@@ -55,7 +60,7 @@ mode and opens the desktop window against the dev server.
 | `npm run build`           | Type-check, then build main/preload (`dist-electron`) and UI (`dist`) |
 | `npm run typecheck`       | TypeScript strict-mode check with no emit                       |
 | `npm start`               | Build and run the packaged-style application (`electron .`)     |
-| `npm run verify`          | Build, then run every verification suite (Stage 1 + Stage 2)      |
+| `npm run verify`          | Build, then run every verification suite (Stages 1–5)             |
 | `npm run verify:only`     | Run the suites against the existing `dist/` build                 |
 | `npm run icons`           | Regenerate `build/icon.ico` / `build/icon.png`                  |
 | `npm run pack`            | Unpacked application directory (`release/`)                     |
@@ -102,12 +107,16 @@ excel-data-analyzer/
 │   │   ├── ui/                  # Button, Card, Badge, Tooltip, EmptyState, StatCard,
 │   │   │                        # StatGrid, ErrorState, ErrorBoundary, FileDropZone,
 │   │   │                        # PageHeader, Toast…
-│   │   ├── dashboard/           # FileImportCard, ImportProgressPanel, DashboardStats, RoadmapCard
+│   │   ├── dashboard/           # FileImportCard, ImportProgressPanel, AnalyticsSection,
+│   │   │                        # AnalyticsStats, FilteredAnalyticsSection, PaymentModeBreakdown,
+│   │   │                        # AmountDistribution, DataQualityInsights, DuplicateInsights,
+│   │   │                        # BarList, RoadmapCard
 │   │   └── data/                # DataTable, DatasetStats, ValidationSummary,
 │   │                            # RecordDetailsPanel, ImportSummaryPanel, WorksheetSelector,
 │   │                            # FilterPanel, NameCombobox, FilteredSummary, ResultHeader,
-│   │                            # ExportDataButton
+│   │                            # ExportDataButton, InspectionBanner
 │   ├── domain/                  # Pure rules: filtering/validation/matching/totals/paging
+│   │   ├── analytics.ts         #   + the single-pass analytics report (no React, no Electron)
 │   │   ├── filtering.ts         #   + local-day helpers and filter chips
 │   │   └── pagination.ts        #   + the compact page list (first/last/gap)
 │   ├── hooks/                   # useWindowControls, usePlatformInfo, useCountUp
@@ -115,6 +124,7 @@ excel-data-analyzer/
 │   ├── lib/                     # desktop-bridge accessor, navigation config, excel rules
 │   ├── pages/                   # DashboardPage, DataPage, SettingsPage
 │   ├── state/                   # DatasetProvider (imported workbook, single copy of records)
+│   │   ├── AnalyticsProvider.tsx#   + the memoized reports, session state and inspections
 │   │   └── FilterProvider.tsx   #   + the filters and the single filtered result set
 │   ├── styles/globals.css       # Tailwind layers, focus states, scrollbars, motion rules
 │   ├── types/                   # Display schema (columns, fields) + window typings
@@ -127,7 +137,7 @@ excel-data-analyzer/
 │   ├── generate-icons.mjs       # Dependency-free PNG/ICO icon generator
 │   ├── verify.mjs               # Verification entry point (runs every suite)
 │   └── verify/                  # Suites + shared harness + fictional fixtures
-│       ├── stage1.mjs … stage4.mjs  # shell → import → filtering → export
+│       ├── stage1.mjs … stage5.mjs  # shell → import → filtering → export → analytics
 ├── build/                       # Generated app icons (icon.ico, icon.png)
 ├── electron-builder.yml         # Packaging configuration
 ├── index.html
@@ -192,11 +202,16 @@ window itself never scrolls — only the content region does.
 
 Every colour, radius, shadow and animation is declared once in `tailwind.config.ts`:
 
-* Backgrounds `#0B1020` / `#111827`, surfaces `#151D2E` / `#1B2538`, borders `#263247`
-* Accent gradient `#6366F1 → #8B5CF6`, cyan support `#22D3EE` used sparingly
-* Text `#F8FAFC` / `#CBD5E1` / `#94A3B8`, status colours `#22C55E` / `#F59E0B` / `#EF4444`
+* Backgrounds `#F4F5F7` (workspace) / `#FFFFFF` (title bar), surfaces `#FFFFFF` (cards) /
+  `#F7F8FA` (elevated rows, secondary buttons), borders `#E3E6EB`
+* Accent gradient `#4F46E5 → #4338CA` (a single indigo hue — no neon two-tone look), cyan support
+  `#0E7490` used sparingly
+* Text `#1F2430` / `#3F4753` / `#5F6773`, status colours `#065F46` (success) / `#92400E`
+  (warning) / `#B91C1C` (errors and serious validation findings only)
+* Every text/background combination that appears in the interface is measured against WCAG AA
+  (4.5:1) by the verification suite
 * Radii: 8 px controls, 10 px inputs/buttons, 14 px cards, 18 px panels
-* Motion: 300–450 ms page entrance, ~200 ms card and hover transitions, 150–200 ms buttons,
+* Motion: 250–400 ms content transitions, ~200 ms card and hover transitions, 150–200 ms buttons,
   reduced-motion respected
 
 ---
@@ -353,13 +368,49 @@ new workbook. It never exports a different set, and it never writes to the workb
 
 ---
 
+## The analytics workspace
+
+The Dashboard answers *"what does this workbook contain?"* without any interaction, and the Data
+screen answers *"what do the current filters select?"*. Both read the same report.
+
+* **Source card** — file name, worksheet, imported row count, import time and the current session
+  state, plus **Change Excel File**. The internal file path is never rendered.
+* **Baseline cards** — Imported Records, Valid Amount Records, Total Amount, Average Amount and
+  Invalid / Incomplete Records. With no valid amount the value is `—` with an explanation, never a
+  misleading `₹0.00`, and the average divides by the records that actually carry a valid amount.
+* **Filtered analytics** — once a filter is applied, Filtered Records, Filtered Total Amount and
+  Filtered Average Amount are promoted above the baseline figures, which keep their imported
+  meaning and are never relabelled.
+* **Payment mode breakdown** — one row per mode (blank and unrecognised values grouped as
+  *Unknown / Missing*) with its count, share of the records and total amount, sorted by count.
+* **Amount distribution** — five application-defined ranges (₹0–499, ₹500–999, ₹1 000–4 999,
+  ₹5 000–9 999, ₹10 000 and above) with counts and shares of the valid amounts, drawn as plain
+  elements — no charting dependency.
+* **Data quality** — Missing Name, Vehicle Number, Payment Mode, Payment Reason, Remark, Invalid
+  Date and Invalid Amount, with the total records, the records that carry at least one problem and
+  the resulting percentage. A record with several problems is counted once.
+* **Duplicate insight** — exact matches on all seven normalized fields, reported as a group count
+  and the number of participating records, with the notice *"Possible duplicate records are
+  informational only. No records have been removed."* Nothing is merged, deleted or labelled
+  fraudulent, and no fuzzy matching is performed.
+* **Inspections** — a quality category or a duplicate group opens the affected rows in the existing
+  table (pagination, formatting and long-text handling unchanged) under a *Data Quality Inspection*
+  or *Duplicate Inspection* banner with **Back to results**. It is not a filter: the user's filters,
+  the totals and the export are untouched, and leaving restores them exactly.
+
+Every figure is produced by one pure function, `analyzeRecords(records)`, in
+`src/domain/analytics.ts`. It walks the records once, is deterministic and testable without
+Electron, and is memoized in `AnalyticsProvider` so nothing is recalculated per render.
+
+---
+
 ## Verification
 
 ```bash
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **578 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **706 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -434,6 +485,32 @@ npm run verify
    scroll, truncation with tooltips, `—` versus invalid values, pagination counts for the filtered
    dataset (`Showing 101–125 of 125 matching records`), the page-size choices and the motion
    budget (no bounce, no per-row animation).
+18. **Analytics** — `src/domain/analytics.ts` over fictional fixtures: imported / valid-amount /
+   invalid-amount records, total and average (an invalid amount is never counted as ₹0 and never
+   divided into the average), every payment mode with its count, share and volume including
+   `Unknown / Missing`, the five application-defined ranges at their exact boundaries (0 / 499 /
+   500 / 999 / 1 000 / 4 999 / 5 000 / 9 999 / 10 000), each data-quality category, a record with
+   several problems counted once, exact duplicates on all seven normalized fields (and the
+   near-misses that must *not* group), the filtered report next to the unfiltered one, and a
+   20 000-record / 200 000-record run that proves the single pass.
+19. **Analytics UI** — the Dashboard rendered from a real import: the source card (name, worksheet,
+   row count, import time, session state — never a file path), the five baseline cards with `—`
+   instead of a fake ₹0, the imported-versus-filtered cards (the filtered ones promoted, the
+   imported ones never relabelled), the payment-mode breakdown and the range list following the
+   active filters, the data-quality categories with their record counts, the duplicate groups with
+   the informational notice, and the empty state when no valid amount is loaded.
+20. **Session states** — the nine states end to end: no workbook (welcome, dashes only), workbook
+   loaded without filters, filters active, zero matches (dataset, filters and controls survive),
+   data-quality inspection (the affected rows in the existing table, no export, nothing edited),
+   duplicate inspection (the identical rows unchanged), returning from an inspection (filters,
+   results and export come back exactly), a successful replacement (filters, inspection and
+   pagination reset, analytics recalculated) and a failed replacement (explicit error, previous
+   workbook and its analytics kept).
+21. **Workspace quality** — one analytics layer (the dashboard components never calculate),
+   memoized reports instead of per-render recomputation, the new modules free of Electron, Node,
+   IPC, `eval` and blocking dialogs, no absolute path rendered, the motion budget (no bounce, no
+   continuous or oversized animation), no new charting dependency, and a WCAG AA contrast sweep
+   that measures every text/background combination in the interface against its own theme.
 
 The native window, the Windows file picker, the Windows save dialog, the packaged application and
 the installer need a machine that can run Electron and Windows: `npm run dev` (and
@@ -494,8 +571,28 @@ against the real Windows dialog here.
   background changes, with no movement.
 * Work through a long result set with the page numbers, `‹ Previous` / `Next ›` and the page-size
   selector → the table never renders the whole dataset at once.
-* Switch to the Dashboard with filters applied → the tiles follow the filters; without filters they
-  say *"No filters applied yet"*.
+* Switch to the Dashboard with filters applied → the imported and the filtered figures are
+  visibly separated, and only the breakdowns that describe *the current result* change.
+* Check the baseline cards against the table: **Imported Records**, **Valid Amount Records**,
+  **Total Amount**, **Average Amount** and **Invalid / Incomplete Records**. A workbook with no
+  valid amount shows `—` with an explanation, never `₹0.00`.
+* Compare the **Payment Mode Breakdown** with the table: one row per mode with its count, share
+  and total; a blank or unrecognised mode appears as *Unknown / Missing* and is never dropped.
+* Compare the **Amount Distribution** with the imported amounts: the five ranges are
+  application-defined (₹0–499, ₹500–999, ₹1 000–4 999, ₹5 000–9 999, ₹10 000 and above) and count
+  valid amounts only.
+* Click a **Data Quality** category → the affected rows open in the table under a *Data Quality
+  Inspection* banner while the filters, the export and the imported data stay untouched; press
+  **Back to results** → exactly the previous screen returns.
+* Click a **duplicate group** → the identical rows open with the notice *"Possible duplicate
+  records are informational only. No records have been removed."*; nothing is deleted, merged or
+  declared fraudulent.
+* Press **Change Excel File** and pick another workbook → the filters, the inspection state and the
+  pagination reset and every figure is recalculated; pick a damaged file instead → the message
+  appears and the previous workbook stays loaded.
+* Walk through the six session states (welcome, workbook loaded, filters active, no matches,
+  data-quality inspection, duplicate inspection) → each one is visibly distinct, and *no matches*
+  keeps the dataset and the filter panel usable.
 * Minimise, maximise/restore and close the window with the custom title-bar controls.
 * `npm start` (packaged-style build, `app://` origin) renders exactly like `npm run dev`.
 * Resize the window (including down to 900 × 620) — the layout stays usable, and a large workbook
@@ -511,10 +608,13 @@ against the real Windows dialog here.
 | 2     | Workbook parsing, normalization and the data screen ✅                |
 | 3     | Filtering by date/name/vehicle/amount, totals over the filtered set ✅ |
 | 4     | Export the filtered records to Excel, production UX and resilience ✅  |
-| 5     | Windows installer polish, icons, signing, release packaging          |
+| 5     | Analytics workspace, data-quality insights, duplicate insight, session UX ✅ |
+| 6     | Windows installer polish, icons, signing, release packaging           |
 
-Stage 4 is complete: the Data screen filters the records that are already loaded, calculates the
-matching total and average automatically and exports exactly the displayed records to a new
-`.xlsx` workbook through the native save dialog. PDF export, record editing, saved filter presets,
-diagrams, accounts, cloud sync and scheduled imports remain out of scope and are deliberately not
-implemented.
+Stage 5 is complete: the Dashboard describes the imported workbook with a single-pass analytics
+layer (baseline statistics, payment-mode breakdown, amount distribution, data-quality summary and
+an informational duplicate insight), each insight opens the affected rows in the existing table
+without modifying anything, and every session state — welcome, loaded, filtered, zero matches,
+both inspections — is visually distinct. PDF export, record editing, saved filter presets,
+diagrams, accounts, cloud sync, scheduled imports and packaging polish remain out of scope and are
+deliberately not implemented.

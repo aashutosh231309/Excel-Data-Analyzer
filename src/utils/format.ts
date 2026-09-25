@@ -75,6 +75,30 @@ export function formatDateIso(isoDate: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
+/**
+ * Formats an epoch timestamp as the local `DD/MM/YYYY, HH:MM` stamp used by the
+ * source card. Local getters only, so the displayed time is the user's clock.
+ */
+export function formatDateTimeLocal(epochMs: number | null | undefined): string {
+  if (epochMs === null || epochMs === undefined || !Number.isFinite(epochMs)) {
+    return PLACEHOLDER_VALUE;
+  }
+  const date = new Date(epochMs);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return (
+    `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}` +
+    `, ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
+/** Formats a percentage that was already rounded to one decimal (12.5 → "12.5%"). */
+export function formatPercentage(value: number): string {
+  if (!Number.isFinite(value)) {
+    return PLACEHOLDER_VALUE;
+  }
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+}
+
 /** Formats a ratio as a whole percentage for progress reporting. */
 export function formatPercent(value: number, total: number): number {
   if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) {

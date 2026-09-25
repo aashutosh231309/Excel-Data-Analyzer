@@ -269,10 +269,13 @@ async function verifyRenderer(workspace) {
     'Drag & drop your spreadsheet here',
     'Browse Excel File',
     'Supported formats: .xlsx, .xls',
-    'Total Records',
-    'Filtered Records',
+    // Stage 5 replaced the four headline tiles with the five analytics tiles of
+    // the imported dataset; the filtered figures moved to their own section.
+    'Imported Records',
+    'Valid Amount Records',
     'Total Amount',
     'Average Amount',
+    'Invalid / Incomplete Records',
     'Dashboard',
     'Data',
     'Settings',
@@ -286,19 +289,27 @@ async function verifyRenderer(workspace) {
   const placeholders = Array.from(document.querySelectorAll('p')).filter(
     (node) => node.textContent?.trim() === '—',
   );
-  check('renderer', 'statistic cards show empty placeholders', placeholders.length === 4, `found ${placeholders.length}`);
-
-  const bodyStyle = window.getComputedStyle(document.body);
   check(
     'renderer',
-    'app background uses #0B1020',
-    normalizeColor(bodyStyle.backgroundColor) === normalizeColor('#0B1020'),
+    'the five statistic cards show empty placeholders',
+    placeholders.length === 5,
+    `found ${placeholders.length}`,
+  );
+
+  const bodyStyle = window.getComputedStyle(document.body);
+  // Stage 5 re-pinned the design tokens to the light workspace palette
+  // (light grey background, white cards, charcoal ink, deep indigo accent).
+  // The assertions below check the same properties against the new values.
+  check(
+    'renderer',
+    'app background uses the light workspace colour #F4F5F7',
+    normalizeColor(bodyStyle.backgroundColor) === normalizeColor('#F4F5F7'),
     bodyStyle.backgroundColor,
   );
   check(
     'renderer',
-    'primary text uses #F8FAFC',
-    normalizeColor(bodyStyle.color) === normalizeColor('#F8FAFC'),
+    'primary text uses the charcoal ink #1F2430',
+    normalizeColor(bodyStyle.color) === normalizeColor('#1F2430'),
     bodyStyle.color,
   );
   check(
@@ -313,9 +324,9 @@ async function verifyRenderer(workspace) {
   const gradient = (style) => (style?.backgroundImage ?? '').replace(/\s/g, '');
   check(
     'renderer',
-    'primary button uses the blue-violet gradient (#6366F1 → #8B5CF6)',
-    gradient(primaryStyle).includes('linear-gradient(135deg,#6366f1,#8b5cf6)') ||
-      (gradient(primaryStyle).includes('99,102,241') && gradient(primaryStyle).includes('139,92,246')),
+    'primary button uses the deep indigo gradient (#4F46E5 → #4338CA)',
+    gradient(primaryStyle).includes('linear-gradient(135deg,#4f46e5,#4338ca)') ||
+      (gradient(primaryStyle).includes('79,70,229') && gradient(primaryStyle).includes('67,56,202')),
     primaryStyle?.backgroundImage,
   );
   check(
@@ -336,8 +347,8 @@ async function verifyRenderer(workspace) {
   const cardStyle = card ? window.getComputedStyle(card) : null;
   check(
     'renderer',
-    'cards use the #151D2E surface',
-    normalizeColor(cardStyle?.backgroundColor) === normalizeColor('#151D2E'),
+    'cards use the #FFFFFF surface',
+    normalizeColor(cardStyle?.backgroundColor) === normalizeColor('#FFFFFF'),
     cardStyle?.backgroundColor,
   );
   check('renderer', 'cards use the 14px radius', cardStyle?.borderRadius === '14px', cardStyle?.borderRadius);
@@ -345,18 +356,19 @@ async function verifyRenderer(workspace) {
   // so the token is verified through the compiled stylesheet plus the applied class.
   check(
     'renderer',
-    'cards use the #263247 border',
-    css.includes('.border-surface-border{--tw-border-opacity: 1;border-color:rgb(38 50 71') &&
+    'cards use the #E3E6EB border',
+    css.includes('.border-surface-border') &&
+      css.includes('border-color:rgb(227 230 235') &&
       card?.className.includes('border-surface-border') === true,
   );
   check(
     'renderer',
     'palette tokens are compiled into the stylesheet',
-    css.includes('background-color:rgb(11 16 32') && // #0B1020
-      css.includes('background-color:rgb(21 29 46') && // #151D2E
-      css.includes('background-color:rgb(27 37 56') && // #1B2538
-      css.includes('#6366f1,#8b5cf6') && // accent gradient
-      css.includes('248 250 252'), // #F8FAFC text
+    css.includes('background-color:rgb(244 245 247') && // #F4F5F7
+      css.includes('background-color:rgb(255 255 255') && // #FFFFFF
+      css.includes('background-color:rgb(247 248 250') && // #F7F8FA
+      css.includes('#4f46e5,#4338ca') && // accent gradient
+      css.includes('31 36 48'), // #1F2430 text
   );
 
   const activeNav = document.querySelector('[aria-current="page"]');
@@ -366,8 +378,8 @@ async function verifyRenderer(workspace) {
   check(
     'renderer',
     'the active navigation item uses the decorative accent gradient',
-    activeGradient.includes('linear-gradient(135deg,#6366f124,#8b5cf614)') ||
-      (activeGradient.includes('99,102,241,0.14') && activeGradient.includes('139,92,246,0.08')),
+    activeGradient.includes('linear-gradient(135deg,#4f46e524,#4338ca14)') ||
+      (activeGradient.includes('79,70,229,0.08') && activeGradient.includes('67,56,202,0.04')),
     activeNavStyle?.backgroundImage,
   );
   check(
@@ -704,7 +716,15 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
   // Back on the dashboard the loaded-file panel reports the real file details.
   click(findButton('Dashboard'));
   await settle();
-  check('bridge', 'the selected file location is displayed', text().includes('C:\\Reports\\july payments.xlsx'));
+  // Stage 5 replaced the internal path line in the source card with the workbook
+  // name, the worksheet, the row count and the load time: the interface never
+  // shows the user's folder layout.
+  check(
+    'bridge',
+    'the source card names the workbook without exposing the internal path',
+    text().includes('july payments.xlsx') && !text().includes('C:\\Reports'),
+    text().slice(0, 160),
+  );
   check('bridge', 'the selected file size is displayed', text().includes('15 KB'));
   check(
     'bridge',
@@ -1010,7 +1030,12 @@ async function verifyMainProcess(workspace) {
     windowOptions?.webPreferences?.preload === path.join(root, 'dist-electron/preload.js'),
     windowOptions?.webPreferences?.preload,
   );
-  check('main process', 'the window background matches the design system', windowOptions?.backgroundColor === '#0B1020');
+  check(
+    'main process',
+    'the window background matches the light design system',
+    windowOptions?.backgroundColor === '#F4F5F7',
+    windowOptions?.backgroundColor,
+  );
   harness.window?.readyToShow?.();
   check('main process', 'the ready-to-show handler shows the window', harness.window?.shown === true);
   check(
@@ -1019,7 +1044,7 @@ async function verifyMainProcess(workspace) {
     harness.window?.loadedUrl === 'app://bundle/index.html',
     harness.window?.loadedUrl,
   );
-  check('main process', 'dark mode is requested from the OS', state.themeSource === 'dark');
+  check('main process', 'light mode is requested from the OS', state.themeSource === 'light');
 
   // --- packaged renderer protocol ----------------------------------------
   const scheme = state.privilegedSchemes.find((entry) => entry.scheme === 'app');

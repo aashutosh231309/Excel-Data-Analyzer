@@ -1,4 +1,13 @@
-import { Download, FileSpreadsheet, Funnel, Sigma, Sparkles, type LucideIcon } from 'lucide-react';
+import {
+  BarChart3,
+  Download,
+  FileSpreadsheet,
+  Funnel,
+  ShieldAlert,
+  Sigma,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { RECORD_COLUMNS } from '@/types/domain';
@@ -35,6 +44,18 @@ const PLANNED_CAPABILITIES: readonly PlannedCapability[] = [
     icon: Download,
     title: 'Export the results',
     description: 'Save exactly the records on screen to a new .xlsx file.',
+    done: true,
+  },
+  {
+    icon: BarChart3,
+    title: 'Analytics workspace',
+    description: 'Totals, payment modes and amount ranges of the loaded workbook.',
+    done: true,
+  },
+  {
+    icon: ShieldAlert,
+    title: 'Quality & duplicate insights',
+    description: 'Missing fields, unreadable values and exact duplicates — informational only.',
     done: true,
   },
 ];
@@ -83,9 +104,9 @@ export function RoadmapCard() {
       </ul>
       <p className="border-t border-surface-border pt-3 text-[11px] text-content-muted">
         Workbooks are parsed locally in the main process and only normalised records reach the
-        interface. Filtering runs in memory and the export writes nothing but the records on
-        screen — the source workbook is never modified. Record editing, presets and packaging
-        polish follow in the next stage.
+        interface. Filtering, the analytics and the quality checks run in memory over those records,
+        and the export writes nothing but the records on screen — the source workbook is never
+        modified. Record editing, filter presets and packaging polish are not part of this build.
       </p>
     </Card>
   );

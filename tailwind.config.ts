@@ -10,28 +10,35 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Light, neutral workspace: the application background is a soft grey so
+        // white cards read as slightly elevated surfaces.
         background: {
-          DEFAULT: '#0B1020',
-          secondary: '#111827',
+          DEFAULT: '#F4F5F7',
+          secondary: '#FFFFFF',
         },
         surface: {
-          DEFAULT: '#151D2E',
-          elevated: '#1B2538',
-          border: '#263247',
+          DEFAULT: '#FFFFFF',
+          elevated: '#F7F8FA',
+          border: '#E3E6EB',
         },
+        // Deep indigo primary with a darker companion tone for emphasis.
         accent: {
-          DEFAULT: '#6366F1',
-          violet: '#8B5CF6',
-          cyan: '#22D3EE',
+          DEFAULT: '#4F46E5',
+          violet: '#4338CA',
+          cyan: '#0E7490',
         },
+        // Dark charcoal text at three strengths for a clear hierarchy.
         content: {
-          DEFAULT: '#F8FAFC',
-          secondary: '#CBD5E1',
-          muted: '#94A3B8',
+          DEFAULT: '#1F2430',
+          secondary: '#3F4753',
+          muted: '#5F6773',
         },
-        success: '#22C55E',
-        warning: '#F59E0B',
-        danger: '#EF4444',
+        // One step darker than the classic 600 shades: badges and inline
+        // messages render these on a 10% tint of the same hue, which would drop
+        // the contrast of the lighter shades below 4.5:1.
+        success: '#065F46',
+        warning: '#92400E',
+        danger: '#B91C1C',
       },
       fontFamily: {
         sans: [
@@ -51,14 +58,17 @@ export default {
         panel: '18px',
       },
       backgroundImage: {
-        'accent-gradient': 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+        // A restrained single-hue indigo gradient: strong hierarchy without the
+        // neon two-tone look of the previous theme.
+        'accent-gradient': 'linear-gradient(135deg, #4F46E5, #4338CA)',
         'accent-decorative':
-          'linear-gradient(135deg, rgba(99,102,241,0.14), rgba(139,92,246,0.08))',
+          'linear-gradient(135deg, rgba(79,70,229,0.08), rgba(67,56,202,0.04))',
       },
       boxShadow: {
-        card: '0 1px 2px rgba(2, 6, 23, 0.35)',
-        raised: '0 10px 24px -18px rgba(2, 6, 23, 0.9)',
-        glow: '0 12px 32px -18px rgba(99, 102, 241, 0.75)',
+        // Very soft elevation: cards are separated by borders, not by heavy depth.
+        card: '0 1px 2px rgba(16, 24, 40, 0.06)',
+        raised: '0 8px 24px -14px rgba(16, 24, 40, 0.22)',
+        glow: '0 10px 28px -18px rgba(79, 70, 229, 0.45)',
       },
       keyframes: {
         'fade-up': {

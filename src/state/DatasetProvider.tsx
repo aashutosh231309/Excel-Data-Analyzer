@@ -54,6 +54,12 @@ export interface DatasetContextValue {
   sheets: WorksheetSummary[];
   sheetName: string | null;
   statistics: ImportStatistics | null;
+  /**
+   * When the loaded records were read (epoch milliseconds, local session only).
+   * `null` while no workbook is loaded; refreshed on every successful import and
+   * worksheet switch. The exact source path is deliberately not part of the UI.
+   */
+  loadedAt: number | null;
   progress: ImportProgress | null;
   error: DatasetError | null;
   /** Statistics of a valid workbook that carried no usable rows. */
@@ -76,6 +82,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
   const [sheets, setSheets] = useState<WorksheetSummary[]>([]);
   const [sheetName, setSheetName] = useState<string | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [error, setError] = useState<DatasetError | null>(null);
   const [emptyStatistics, setEmptyStatistics] = useState<ImportStatistics | null>(null);
 
@@ -127,6 +134,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
           setDataset(workbook);
           setSheets(workbook.sheets);
           setSheetName(workbook.sheetName);
+          setLoadedAt(Date.now());
           setEmptyStatistics(null);
           setError(null);
           setStatus('ready');
@@ -142,6 +150,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
           setDataset(null);
           setSheets(result.sheets);
           setSheetName(result.sheetName);
+          setLoadedAt(null);
           setEmptyStatistics(result.statistics);
           setError(null);
           setStatus('empty');
@@ -385,6 +394,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
     setFile(null);
     setSheets([]);
     setSheetName(null);
+    setLoadedAt(null);
     setEmptyStatistics(null);
     setError(null);
     setProgress(null);
@@ -403,6 +413,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
       sheets,
       sheetName,
       statistics,
+      loadedAt,
       progress,
       error,
       emptyStatistics,
@@ -420,6 +431,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
       sheets,
       sheetName,
       statistics,
+      loadedAt,
       progress,
       error,
       emptyStatistics,

@@ -53,7 +53,10 @@ export function DataTable({
 
   return (
     <div className="overflow-hidden rounded-panel border border-surface-border bg-background-secondary">
-      <div className="max-h-[58vh] overflow-auto overscroll-contain scroll-smooth-y">
+      <div
+        data-table-scroll
+        className="max-h-[58vh] overflow-auto overscroll-contain scroll-smooth-y"
+      >
         {/* A minimum width keeps the seven columns readable; narrower windows
             scroll the table horizontally instead of squeezing the cells. */}
         <table className="w-full min-w-[54rem] table-fixed border-collapse text-left text-[13px]">
@@ -69,7 +72,7 @@ export function DataTable({
                   key={column.field}
                   scope="col"
                   className={cn(
-                    'select-none whitespace-nowrap px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-content-secondary',
+                    'select-none whitespace-nowrap px-3.5 py-3 text-[11px] font-semibold uppercase tracking-wider text-content-secondary',
                     column.align === 'right' && 'text-right',
                   )}
                 >
@@ -142,7 +145,7 @@ function DataRow({ record, selected, onSelect }: DataRowProps) {
         selected ? 'bg-accent/10' : 'hover:bg-surface-elevated/70',
       )}
     >
-      <td className="px-3.5 py-2 align-top tabular-nums">
+      <td className="px-3.5 py-2.5 align-top tabular-nums">
         {record.date ? (
           <span className="text-content-secondary">{formatDateIso(record.date)}</span>
         ) : dateIssue ? (
@@ -151,12 +154,12 @@ function DataRow({ record, selected, onSelect }: DataRowProps) {
           <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>
         )}
       </td>
-      <td className="px-3.5 py-2 align-top">
+      <td className="px-3.5 py-2.5 align-top">
         <span className="block truncate font-medium text-content" title={record.name || undefined}>
           {record.name || <span className="font-normal text-content-muted">{PLACEHOLDER_VALUE}</span>}
         </span>
       </td>
-      <td className="px-3.5 py-2 align-top">
+      <td className="px-3.5 py-2.5 align-top">
         {record.vehicleNumber ? (
           <span
             className="block truncate font-medium tracking-wide text-content-secondary"
@@ -168,12 +171,12 @@ function DataRow({ record, selected, onSelect }: DataRowProps) {
           <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>
         )}
       </td>
-      <td className="px-3.5 py-2 align-top">
+      <td className="px-3.5 py-2.5 align-top">
         <span className="block truncate text-content-secondary" title={record.paymentMode || undefined}>
           {record.paymentMode || <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>}
         </span>
       </td>
-      <td className="px-3.5 py-2 text-right align-top tabular-nums">
+      <td className="px-3.5 py-2.5 text-right align-top tabular-nums">
         {record.amountMinor !== null ? (
           <span className="font-medium text-content">{formatAmountMinor(record.amountMinor)}</span>
         ) : amountIssue ? (
@@ -186,21 +189,28 @@ function DataRow({ record, selected, onSelect }: DataRowProps) {
           <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>
         )}
       </td>
-      <td className="px-3.5 py-2 align-top">
+      <td className="px-3.5 py-2.5 align-top">
         {/* Long free text is truncated in place and readable in a tooltip or in
             the details panel — the table never becomes a wall of text. */}
         {record.paymentReason ? (
           <Tooltip label={record.paymentReason} wrap className="w-full">
-            <span className="block truncate text-content-secondary">{record.paymentReason}</span>
+            <span
+              className="block w-full truncate text-content-secondary"
+              title={record.paymentReason}
+            >
+              {record.paymentReason}
+            </span>
           </Tooltip>
         ) : (
           <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>
         )}
       </td>
-      <td className="px-3.5 py-2 align-top">
+      <td className="px-3.5 py-2.5 align-top">
         {record.remark ? (
           <Tooltip label={record.remark} wrap className="w-full">
-            <span className="block truncate text-content-muted">{record.remark}</span>
+            <span className="block w-full truncate text-content-muted" title={record.remark}>
+              {record.remark}
+            </span>
           </Tooltip>
         ) : (
           <span className="text-content-muted">{PLACEHOLDER_VALUE}</span>

@@ -9,12 +9,14 @@ import { DataTable } from '@/components/data/DataTable';
 import { DatasetStats } from '@/components/data/DatasetStats';
 import { FilterPanel } from '@/components/data/FilterPanel';
 import { FilteredSummary } from '@/components/data/FilteredSummary';
+import { InspectionBanner } from '@/components/data/InspectionBanner';
 import { ResultHeader } from '@/components/data/ResultHeader';
 import { ImportProgressPanel } from '@/components/dashboard/ImportProgressPanel';
 import { ImportSummaryPanel } from '@/components/data/ImportSummaryPanel';
 import { RecordDetailsPanel } from '@/components/data/RecordDetailsPanel';
 import { ValidationSummary } from '@/components/data/ValidationSummary';
 import { WorksheetSelector } from '@/components/data/WorksheetSelector';
+import { useAnalytics } from '@/state/AnalyticsProvider';
 import { useDataset } from '@/state/DatasetProvider';
 import { useFilters } from '@/state/FilterProvider';
 import type { AppSection } from '@/lib/navigation';
@@ -50,14 +52,19 @@ export function DataPage({ onNavigate }: DataPageProps) {
   } = useDataset();
 
   const { result, isFiltered, clearFilters } = useFilters();
+  const { inspection, endInspection } = useAnalytics();
   const [selectedRecord, setSelectedRecord] = useState<TransactionRecord | null>(null);
 
-  // A row that is no longer part of the result set cannot stay selected.
+  // While an inspection is open the table shows exactly those records; otherwise
+  // it shows the user's own result set.
+  const visibleRecords = inspection ? inspection.records : result.records;
+
+  // A row that is no longer part of the visible records cannot stay selected.
   useEffect(() => {
-    if (selectedRecord && !result.records.some((record) => record.id === selectedRecord.id)) {
+    if (selectedRecord && !visibleRecords.some((record) => record.id === selectedRecord.id)) {
       setSelectedRecord(null);
     }
-  }, [result.records, selectedRecord]);
+  }, [visibleRecords, selectedRecord]);
 
   const chooseAnotherFile = useCallback(() => {
     void importFromDialog();
@@ -79,7 +86,7 @@ export function DataPage({ onNavigate }: DataPageProps) {
     if (!file) {
       return 'Import a workbook to filter the records and total the matching amounts.';
     }
-    const parts = [file.name];
+    const parts = [dataset?.file.name ?? file.name];
     if (sheetName) {
       parts.push(`worksheet ${sheetName}`);
     }
@@ -152,7 +159,7 @@ export function DataPage({ onNavigate }: DataPageProps) {
           )}
 
           <ImportSummaryPanel
-            fileName={file?.name ?? dataset.file.name}
+            fileName={dataset.file.name}
             sheetName={sheetName ?? dataset.sheetName}
             sheets={dataset.sheets}
             columns={dataset.columns}
@@ -163,32 +170,48 @@ export function DataPage({ onNavigate }: DataPageProps) {
 
           <FilterPanel />
 
-          <section aria-label="Filtered results" className="flex flex-col gap-3">
-            <ResultHeader fileName={file?.name ?? dataset.file.name} />
+          <FilteredSummary result={result} />
 
-            <FilteredSummary result={result} />
-
-            {isFiltered && result.count === 0 ? (
-              <EmptyState
-                icon={SearchX}
-                title="No matching records"
-                description="Try changing or clearing one or more filters."
-                className="animate-fade-up"
-                action={
-                  <Button variant="secondary" icon={Eraser} onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                }
-              />
-            ) : (
+          {inspection ? (
+            <section aria-label="Record inspection" className="flex flex-col gap-3">
+              <InspectionBanner inspection={inspection} onReturn={endInspection} />
               <DataTable
-                records={result.records}
+                records={inspection.records}
                 selectedRecordId={selectedRecord?.id ?? null}
                 onSelectRecord={handleSelectRecord}
-                recordsLabel={isFiltered ? 'matching records' : 'imported records'}
+                recordsLabel={
+                  inspection.kind === 'data-quality'
+                    ? 'records in this data quality check'
+                    : 'records in this duplicate inspection'
+                }
               />
-            )}
-          </section>
+            </section>
+          ) : (
+            <section aria-label="Filtered results" className="flex flex-col gap-3">
+              <ResultHeader fileName={dataset.file.name} />
+
+              {isFiltered && result.count === 0 ? (
+                <EmptyState
+                  icon={SearchX}
+                  title="No matching records"
+                  description="Try changing or clearing one or more filters."
+                  className="animate-fade-up"
+                  action={
+                    <Button variant="secondary" icon={Eraser} onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  }
+                />
+              ) : (
+                <DataTable
+                  records={result.records}
+                  selectedRecordId={selectedRecord?.id ?? null}
+                  onSelectRecord={handleSelectRecord}
+                  recordsLabel={isFiltered ? 'matching records' : 'imported records'}
+                />
+              )}
+            </section>
+          )}
         </div>
       ) : (
         !isBusy && (

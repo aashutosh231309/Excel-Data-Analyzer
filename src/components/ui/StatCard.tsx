@@ -45,6 +45,7 @@ export interface StatCardModel {
  * interface never invents figures.
  */
 export function StatCard({
+  id,
   label,
   value,
   hint,
@@ -60,6 +61,7 @@ export function StatCard({
     <Card
       interactive
       padding="lg"
+      data-metric={id}
       className={cn('flex flex-col gap-3', emphasis && 'border-accent/40 bg-accent-decorative')}
     >
       <div className="flex items-start justify-between gap-3">
@@ -77,6 +79,7 @@ export function StatCard({
         </span>
       </div>
       <p
+        data-metric-value
         className={cn(
           'text-2xl font-semibold tracking-tight tabular-nums',
           hasValue ? TONE_VALUE_CLASSES[tone] : 'text-content-muted',
