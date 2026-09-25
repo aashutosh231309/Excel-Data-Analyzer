@@ -205,7 +205,10 @@ function verifyConfiguration(inputs) {
     'release artefacts are written to a dedicated, ignored directory',
     config.directories.output === 'release' &&
       existsSync(path.join(root, '.gitignore')) &&
-      /^release\/$/m.test(readFileSync(path.join(root, '.gitignore'), 'utf8')),
+      // The rule is anchored to the repository root on purpose: an unanchored
+      // `release/` would also hide `scripts/release/`, which holds the release
+      // tooling and must be committed.
+      /^\/release\/$/m.test(readFileSync(path.join(root, '.gitignore'), 'utf8')),
   );
   check(
     GROUP_CONFIG,

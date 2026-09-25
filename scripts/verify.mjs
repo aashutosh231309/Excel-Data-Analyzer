@@ -16,6 +16,7 @@ import { runStage3 } from './verify/stage3.mjs';
 import { runStage4 } from './verify/stage4.mjs';
 import { runStage5 } from './verify/stage5.mjs';
 import { runStage6 } from './verify/stage6.mjs';
+import { runStage7 } from './verify/stage7.mjs';
 
 const suites = [
   { name: 'Stage 1 — desktop shell', run: runStage1 },
@@ -24,6 +25,7 @@ const suites = [
   { name: 'Stage 4 — filtered export & production UX', run: runStage4 },
   { name: 'Stage 5 — analytics, data quality & session UX', run: runStage5 },
   { name: 'Stage 6 — Windows release packaging', run: runStage6 },
+  { name: 'Stage 7 — release hardening & QA toolkit', run: runStage7 },
 ];
 
 if (!existsSync(path.join(root, 'dist/index.html'))) {

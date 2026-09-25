@@ -3,6 +3,15 @@
  * main/preload scripts in watch mode and launches Electron against the dev URL.
  *
  *   npm run dev
+ *
+ * The Electron sandbox stays on. In an environment where Chromium cannot use its
+ * sandbox at all (a container running as root, for example) the development run
+ * can opt into Chromium's waiver explicitly:
+ *
+ *   EDA_NO_SANDBOX=1 npm run dev
+ *
+ * This never affects the packaged application: it is a development-only launch
+ * argument and it is not part of any packaging input.
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -36,7 +45,10 @@ const electronCtx = await context({
 await electronCtx.watch();
 
 let shuttingDown = false;
-const electron = spawn(electronPath, [root, '--no-sandbox'], {
+/** Explicit, development-only opt-in; the packaged application never uses it. */
+const withoutSandbox = process.env.EDA_NO_SANDBOX === '1';
+const electronArguments = withoutSandbox ? [root, '--no-sandbox'] : [root];
+const electron = spawn(electronPath, electronArguments, {
   stdio: 'inherit',
   env: { ...process.env, VITE_DEV_SERVER_URL: devServerUrl, NODE_ENV: 'development' },
 });
@@ -61,6 +73,9 @@ process.on('SIGTERM', () => {
   void shutdown(0);
 });
 
+if (withoutSandbox) {
+  console.warn('[dev] EDA_NO_SANDBOX=1 — Chromium runs without its sandbox (development only).');
+}
 console.log(`[dev] renderer: ${devServerUrl}`);
 for (const url of server.resolvedUrls?.network ?? []) {
   console.log(`[dev] network:  ${url}`);

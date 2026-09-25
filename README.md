@@ -6,7 +6,7 @@ Load a spreadsheet containing **Date, Name, Vehicle Number, Payment Mode, Amount
 and Remark**, then filter by **date, name, vehicle number and amount** with automatically
 calculated totals. Everything runs locally — no server, no database, no account, no upload.
 
-> **Stage 6 status — Windows release packaging.**
+> **Status — release hardening complete, Windows runtime validation pending.**
 > The application reads `.xlsx` / `.xls` workbooks locally, normalizes every value into a typed
 > record, filters by **date, name, vehicle number and amount** in any combination, calculates the
 > matching **record count, total amount and average amount** automatically and exports **exactly
@@ -16,11 +16,28 @@ calculated totals. Everything runs locally — no server, no database, no accoun
 > amount distribution, a data-quality summary and an informational duplicate insight — all of them
 > calculated once from the records that are already in memory. A quality or duplicate insight opens
 > the affected rows in the existing table without filtering, editing or deleting anything.
-> The project is now packaged for Windows: a per-user NSIS installer, an optional portable build,
-> a multi-resolution application icon, the application metadata (name, identifier, version) in one
-> place and a release check that validates the packaging inputs. Record editing, filter presets and
-> diagrams are deliberately not part of this build. The interface never invents figures: every
-> number on screen comes from the parsed workbook.
+> Everything that can be validated without a Windows machine is validated automatically: the
+> Electron security model, the import/filter/analytics/export behaviour, the packaging
+> configuration, the icon binaries, the packaged archive and the documentation. A single preflight
+> command (`npm run release:check`) runs all of it and reports `PASS`, `FAIL` or `NOT EXECUTED`.
+> **The installer, the native Windows dialogs, the Excel interoperability and the uninstaller have
+> not been executed anywhere yet** — they need a real Windows machine and are tracked as manual
+> release blockers in [`docs/WINDOWS_RELEASE_CHECKLIST.md`](docs/WINDOWS_RELEASE_CHECKLIST.md).
+> Record editing, filter presets and diagrams are deliberately not part of this build. The
+> interface never invents figures: every number on screen comes from the parsed workbook.
+
+### What is implemented
+
+| Area | State |
+| ---- | ----- |
+| Desktop shell, design system, file selection | Stage 1 ✅ |
+| Workbook parsing, normalization, data screen | Stage 2 ✅ |
+| Filtering by date/name/vehicle/amount with totals | Stage 3 ✅ |
+| Filtered export to Excel, production UX, resilience | Stage 4 ✅ |
+| Analytics workspace, data-quality and duplicate insights, session UX | Stage 5 ✅ |
+| Windows packaging, installer, portable build, release readiness | Stage 6 ✅ |
+| Release preflight, QA toolkit, final hardening | Stage 7 ✅ |
+| Windows runtime validation (installer, dialogs, Excel, uninstall) | **Pending a Windows machine** |
 
 ---
 
@@ -62,9 +79,11 @@ mode and opens the desktop window against the dev server.
 | `npm run build`           | Type-check, generate the icons, then build main/preload (`dist-electron`) and UI (`dist`) |
 | `npm run typecheck`       | TypeScript strict-mode check with no emit                       |
 | `npm start`               | Build and run the packaged-style application (`electron .`)     |
-| `npm run verify`          | Build, then run every verification suite (Stages 1–6)             |
+| `npm run verify`          | Build, then run every verification suite (Stages 1–7)             |
 | `npm run verify:only`     | Run the suites against the existing `dist/` build                 |
-| `npm run release:check`   | Validate the release inputs (identity, configuration, icons, archive contents) |
+| `npm run release:check`   | Release preflight: build, suites, static release checks, artefacts |
+| `npm run release:check -- --static` | Configuration checks only (no build, ~1 s)               |
+| `npm run release:check -- --json` | Machine-readable results for CI                            |
 | `npm run icons`           | Regenerate `build/icon.ico` / `build/icon.png`                  |
 | `npm run pack`            | Unpacked application directory (`release/`)                     |
 | `npm run dist:win`        | Windows installer (NSIS, x64)                                   |
@@ -74,7 +93,7 @@ mode and opens the desktop window against the dev server.
 ### Building the Windows application
 
 ```bash
-npm run release:check     # validate the release inputs (no Electron needed)
+npm run release:check     # release preflight (no Electron needed)
 npm run dist:win          # build and package the NSIS installer
 npm run dist:win:portable # optional: a single executable that needs no installation
 ```
@@ -88,20 +107,37 @@ Everything is written to `release/` (ignored by git — no generated installer i
 | `release/win-unpacked/`                     | The unpacked application, produced by `npm run pack`     |
 | `release/latest.yml`, `release/*.blockmap`  | Update metadata Electron Builder writes next to the build |
 
-The installer is a conventional per-user installation: no administrator prompt, installs under
-`%LOCALAPPDATA%\Programs\Excel Data Analyzer`, creates an entry in *Windows Settings → Apps →
-Installed apps* and Start-menu (and desktop) shortcuts, and can be removed from there like any
-other application. The portable build unpacks the same application code into a temporary folder
-when it is launched, so it uses the identical security architecture and leaves no installation
-behind.
+#### Installing on Windows
+
+1. Run `release/Excel Data Analyzer-0.2.0-Setup.exe`.
+2. Windows SmartScreen warns that the publisher is unknown — the installer is not code-signed;
+   continue with *More info → Run anyway*.
+3. Choose the installation directory (the default is `%LOCALAPPDATA%\Programs\Excel Data
+   Analyzer`) and whether a desktop shortcut is created. No administrator prompt appears: the
+   installation is per-user.
+4. Finish, then launch *Excel Data Analyzer* from the Start Menu.
+
+The application appears in *Windows Settings → Apps → Installed apps* with the correct name, icon
+and version. It stores no data of its own beyond what Windows keeps for every application: there is
+no database, no settings file and no cache in the repository or in the installation directory.
+
+#### Uninstalling on Windows
+
+Open *Windows Settings → Apps → Installed apps*, find **Excel Data Analyzer** and choose
+**Uninstall** (or use *Add or remove programs* in the Control Panel). The uninstaller runs without
+elevation, removes the application files, the Start Menu entry and the desktop shortcut, and writes
+nothing else. The portable build needs no uninstallation at all.
+
+The portable build unpacks the same application code into a temporary folder when it is launched,
+so it uses the identical security architecture and leaves no installation behind.
 
 `npm run dist:win` and `npm run dist:win:portable` download the Electron runtime the first time
 they run and therefore need a network connection; the packaged application itself never does.
 
-**Environment note.** The automated suites, the release check and the renderer/main bundles are
+**Environment note.** The automated suites, the preflight and the renderer/main bundles are
 verified headlessly in this checkout. Building the installer, installing it, launching the
-application, the native Windows dialogs and the uninstaller require a Windows machine with the
-Electron runtime available — see *Known environment limitations* below.
+application, the native Windows dialogs, the Excel interoperability and the uninstaller require a
+Windows machine with the Electron runtime available — see *Windows validation status* above.
 
 ---
 
@@ -161,12 +197,17 @@ excel-data-analyzer/
 │   ├── dev.mjs                  # Development launcher (Vite + esbuild watch + Electron)
 │   ├── build-electron.mjs       # esbuild bundler for main/preload
 │   ├── generate-icons.mjs       # Dependency-free PNG/ICO icon generator
-│   ├── release-check.mjs        # Release validation (identity, config, icons, archive)
+│   ├── release-check.mjs        # Release preflight (build → suites → static checks → artefacts)
+│   ├── release/                 #   Preflight pieces: result model, static checks, artefacts
+│   │   ├── model.mjs            #     PASS / FAIL / NOT EXECUTED results and blocker summary
+│   │   ├── static-checks.mjs    #     configuration, security, hygiene, docs checks
+│   │   └── artifact-checks.mjs  #     installer/portable inspection (NOT EXECUTED when absent)
 │   ├── verify.mjs               # Verification entry point (runs every suite)
 │   └── verify/                  # Suites + shared harness + fictional fixtures
 │       ├── packaging.mjs        #   Release-input inspection helpers (shared)
 │       ├── stage1.mjs … stage6.mjs  # shell → import → filtering → export → analytics → packaging
 ├── build/                       # Generated app icons (icon.ico, icon.png, icons/)
+├── docs/                        # Windows release checklist + QA report template
 ├── electron-builder.yml         # Packaging configuration
 ├── index.html
 ├── package.json
@@ -438,7 +479,7 @@ Electron, and is memoized in `AnalyticsProvider` so nothing is recalculated per 
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **762 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **798 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -549,131 +590,78 @@ npm run verify
    and the Windows release material (`build/icon.ico` parsed as a real multi-resolution container,
    the file-system hygiene of the main process, the asar archive packed from the configured
    contents, and the release documentation).
+23. **Release hardening** — the preflight itself: every result is one of `PASS` / `FAIL` /
+   `NOT EXECUTED`, a failing check becomes an automatic blocker and an unrunnable one a manual
+   blocker, and tampered copies of the configuration (a wrong identifier, a missing icon, a
+   `file://` renderer, extra packaged paths, a duplicated version, a missing checklist document)
+   are each proven to fail the corresponding check. The suite also freezes the normalized records
+   and runs filtering, analytics, both inspections and the export preparation over them to prove
+   the imported data is never mutated, and it verifies the QA documents are complete.
 
-### Release check
+### Release preflight
 
 ```bash
-npm run release:check
+npm run release:check              # full preflight: build → suites → static checks → artefacts
+npm run release:check -- --static  # configuration checks only, no build
+npm run release:check -- --json    # machine-readable results for CI
 ```
 
-`npm run release:check` validates the release inputs without launching Electron and without a
-network connection: the identity and version, the Electron Builder schema, the Windows target and
-installer options, the icon binaries, the `app://bundle/` architecture, the production CSP, the
-absence of development material in the package, and the asar archive packed from the configured
-contents. It reports *configuration* correctness — it does not build or install the application.
+The preflight runs every release check this environment can run and reports each one as:
 
-### Known environment limitations
+| Status | Meaning | Effect |
+| ------ | ------- | ------ |
+| `PASS` | the check ran and succeeded | — |
+| `FAIL` | the check ran and failed | **automatic release blocker** |
+| `NOT EXECUTED` | the environment cannot run it | **manual release blocker** |
 
-* The installer, the portable executable, the application window, the native open/save dialogs,
-  the export files and the uninstaller are produced and exercised by Electron Builder on a Windows
-  machine. **Nothing of that has been executed in this checkout**: the automated suites and
-  `npm run release:check` run headlessly (JSDOM + a mocked Electron API), and Electron Builder
-  cannot download the Windows runtime here. Statement of record:
-  `npm run dist:win` → **NOT EXECUTED — environment limitation**.
-* The headless suites prove configuration and code behaviour. They are not a substitute for
-  installing the application on Windows and following the checklist below.
+It covers the Electron Builder schema, the identity and version consistency, the security
+invariants (isolation, sandbox, CSP, `app://bundle/`, preload and IPC surface), the production
+runtime's freedom from development and unknown origins, the package manifest and the asar archive,
+the icon binaries, secrets and repository hygiene, path portability, the export/import safety
+rules and the documentation. When an installer exists, it is inspected too — an installer that was
+never built is reported as `NOT EXECUTED`, never as a pass, and never as a failure of the
+application.
 
-The native window, the Windows file picker, the Windows save dialog, the packaged application and
-the installer need a machine that can run Electron and Windows: `npm run dev` (and
-`npm run dist:win`) on Windows, then work through the checklist below. Everything in this
-checkout is verified headlessly with a mocked Electron API — the save dialog is *not* exercised
-against the real Windows dialog here.
+`npm run release:check` never installs, launches or uninstalls anything, never reaches the
+network, and never disables a security control to make a step succeed.
+
+### Windows validation status — **PENDING**
+
+> **NOT EXECUTED — no Windows environment available.** The development container is Linux: there is
+> no Windows runtime, no usable Electron binary here, no native file dialogs, no Excel and no
+> installer runtime. Electron Builder additionally cannot download the Windows Electron runtime in
+> this sandbox (`npm run dist:win` → *unable to verify the first certificate*), and that limitation
+> is left untouched rather than bypassed by disabling certificate verification.
+
+Therefore, of record:
+
+| Item | Status |
+| ---- | ------ |
+| Renderer, main process, preload and application behaviour | Verified headlessly (JSDOM + mocked Electron) |
+| Packaging configuration, icons, archive contents, documentation | Verified statically by `npm run release:check` |
+| `npm run dist:win` (installer) | **NOT EXECUTED** — environment limitation |
+| Installing and launching on Windows | **NOT EXECUTED** |
+| Native open/save dialogs on Windows | **NOT EXECUTED** |
+| Opening an export in Excel | **NOT EXECUTED** |
+| Uninstalling on Windows | **NOT EXECUTED** |
+
+A headless suite is not Windows testing, and this document does not claim otherwise.
 
 ### Manual checklist (Windows)
 
-* Dashboard opens as the default screen; the sidebar highlights the active section.
-* Hover the sidebar items, buttons, statistic cards and the import area — all respond subtly.
-* Press <kbd>Tab</kbd>: focus rings are visible on every interactive element.
-* Click **Browse Excel File** → the Windows file picker appears filtered to `.xlsx`/`.xls`.
-* Import an `.xlsx` workbook → a success notification appears, the Data screen opens and the
-  statistics, table and quality summary show the real figures.
-* Import an `.xls` workbook → it imports through the same path.
-* Switch to a workbook whose first sheet has no transaction columns → the sheet with the expected
-  headers is used; with several valid sheets, pick one in the worksheet switcher.
-* Import a workbook that is missing a required column → *"Required columns are missing:
-  • Vehicle Number"*, no stack trace, the previous dataset stays loaded.
-* Import a file that is not a spreadsheet, a truncated download and an empty sheet → the
-  corresponding friendly messages, and the app never crashes.
-* Replace a loaded workbook with another file → the table is replaced only on success.
-* Filter by **Date** (with `Today`, `Yesterday` and `Clear`), by **Name** (typing narrows the
-  suggestions; the arrow keys and `Enter` pick one; `Escape` closes the list), by **Vehicle
-  Number** (`up-32-ab-1234` finds `UP32AB1234`) and by **Amount** (exact and range) — one at a
-  time, then two, then all four together.
-* Press **Filter Data** with every box empty → *"Please provide at least one filter."* appears and
-  the imported records stay untouched.
-* Type `abc` in an amount box and `1000`/`5000` as minimum/maximum → the inline messages appear,
-  the filter button is disabled and the previous results stay on screen.
-* Remove one chip → only that category stops filtering; press **Clear Filters** → the imported
-  dataset and the *"No filters applied yet"* hint return.
-* Filter to a combination without matches → *"No matching records"* with `₹0` and `—`, and no
-  stale total.
-* Check the figures against the table: `Filtered Records`, `Total Amount` and `Average Amount`
-  must equal the listed rows — including a worksheet with an invalid amount (never counted as ₹0).
-* With more than one page of results, move to the last page and apply a new filter → the table
-  returns to page 1 and the page count follows the matches.
-* Press **Export Excel** with filters applied → the Windows save dialog appears with
-  `Filtered_Data_DD-MM-YYYY.xlsx`; save it, open the file in Excel and check that it holds exactly
-  the rows on screen, that the seven columns are in order, that `Amount` sums in Excel and that
-  `Date` shows DD/MM/YYYY.
-* Press **Export Excel** again and cancel the dialog → no file is created, no notification
-  appears and the results stay exactly as they were.
-* Try to save the export over the workbook that is loaded → the export is refused with
-  *"That is the workbook that is currently loaded…"* and the original file is unchanged.
-* Press **Export Data** without any filter → the wording explains that all imported records are
-  exported, and the file is named `Imported_Data_…`.
-* Filter until no record matches → the export button is disabled and says
-  *"No records available to export."*.
-* Click **Change Excel File** and pick a different workbook → the new records replace the old ones
-  only on success; pick a damaged file instead → the message appears and the previous dataset stays
-  usable.
-* Collapse the filter panel with **Collapse** → the active categories stay visible and the table
-  gains room; **Expand** brings the inputs back with the same values.
-* Hover a long Payment Reason / Remark → the tooltip shows the full text; hover a row → only the
-  background changes, with no movement.
-* Work through a long result set with the page numbers, `‹ Previous` / `Next ›` and the page-size
-  selector → the table never renders the whole dataset at once.
-* Switch to the Dashboard with filters applied → the imported and the filtered figures are
-  visibly separated, and only the breakdowns that describe *the current result* change.
-* Check the baseline cards against the table: **Imported Records**, **Valid Amount Records**,
-  **Total Amount**, **Average Amount** and **Invalid / Incomplete Records**. A workbook with no
-  valid amount shows `—` with an explanation, never `₹0.00`.
-* Compare the **Payment Mode Breakdown** with the table: one row per mode with its count, share
-  and total; a blank or unrecognised mode appears as *Unknown / Missing* and is never dropped.
-* Compare the **Amount Distribution** with the imported amounts: the five ranges are
-  application-defined (₹0–499, ₹500–999, ₹1 000–4 999, ₹5 000–9 999, ₹10 000 and above) and count
-  valid amounts only.
-* Click a **Data Quality** category → the affected rows open in the table under a *Data Quality
-  Inspection* banner while the filters, the export and the imported data stay untouched; press
-  **Back to results** → exactly the previous screen returns.
-* Click a **duplicate group** → the identical rows open with the notice *"Possible duplicate
-  records are informational only. No records have been removed."*; nothing is deleted, merged or
-  declared fraudulent.
-* Press **Change Excel File** and pick another workbook → the filters, the inspection state and the
-  pagination reset and every figure is recalculated; pick a damaged file instead → the message
-  appears and the previous workbook stays loaded.
-* Walk through the six session states (welcome, workbook loaded, filters active, no matches,
-  data-quality inspection, duplicate inspection) → each one is visibly distinct, and *no matches*
-  keeps the dataset and the filter panel usable.
-* Open **Settings → About** → the card shows *Excel Data Analyzer*, the version reported by the
-  running application (identical to the installer version) and *Installed build*, with the product
-  description and the copyright notice; the window title bar shows the same name.
-* Minimise, maximise/restore and close the window with the custom title-bar controls.
-* `npm start` (packaged-style build, `app://` origin) renders exactly like `npm run dev`.
-* Resize the window (including down to 900 × 620) — the layout stays usable, and a large workbook
-  (tens of thousands of rows) keeps scrolling smoothly.
-* Run `release/Excel Data Analyzer-<version>-Setup.exe` → the installer opens with the application
-  icon, offers a per-user installation (no administrator prompt) and an installation directory,
-  and finishes; the application appears in *Windows Settings → Apps → Installed apps* with the
-  correct name, icon and version and is reachable from the Start menu.
-* Launch the installed application from the Start menu → it opens the Dashboard and every workflow
-  above works exactly as it does in development (files with spaces, Unicode or parentheses in
-  their path included).
-* Launch `release/Excel Data Analyzer-<version>-Portable.exe` → the same application starts without
-  installing anything and without writing into its own directory.
-* Disconnect from the network and repeat one full import → filter → dashboard → export cycle → the
-  application never makes a network request.
-* Uninstall through *Windows Settings → Apps → Installed apps → Excel Data Analyzer* → the
-  application files and its shortcuts are removed.
+The authoritative step-by-step checklist lives in
+[`docs/WINDOWS_RELEASE_CHECKLIST.md`](docs/WINDOWS_RELEASE_CHECKLIST.md): installation, first
+launch, import, filtering, analytics, export, window behaviour, accessibility, offline use,
+uninstallation and the optional portable build — including the PowerShell command that records the
+installer's SHA-256 with `Get-FileHash`. Results are written up with
+[`docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md`](docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md).
+
+Two rules for that run:
+
+* Use a **fictional** workbook with invented payment records. Release testing must never involve
+  real personal or financial data.
+* If an item is skipped, record it as **NOT EXECUTED** rather than leaving it blank or assuming it
+  works. The report template has a field for exactly that.
 
 ---
 
@@ -687,12 +675,15 @@ against the real Windows dialog here.
 | 4     | Export the filtered records to Excel, production UX and resilience ✅  |
 | 5     | Analytics workspace, data-quality insights, duplicate insight, session UX ✅ |
 | 6     | Windows installer, icons, portable build, release readiness ✅          |
+| 7     | Release preflight, QA toolkit, final hardening ✅                       |
 
-Stage 6 is complete: the application has a stable identity (Excel Data Analyzer,
-`com.exceldataanalyzer.app`, version `0.2.0` from `package.json`), a multi-resolution icon in the
-colours of the interface, a per-user NSIS installer with an optional portable build, release
-artefacts in `release/`, an About card that reports the real runtime version, and a release check
-that validates the packaging inputs. Code signing is not part of this stage: the installer is
-unsigned, so Windows SmartScreen will warn on first run. PDF export, record editing, saved filter
-presets, diagrams, accounts, cloud sync, scheduled imports, telemetry and auto-update remain out
-of scope and are deliberately not implemented.
+Stage 7 is complete: one preflight command (`npm run release:check`) runs the build, the whole
+verification suite, the static release checks and the artefact inspection, and reports each result
+as `PASS`, `FAIL` or `NOT EXECUTED` with the automatic and manual release blockers separated.
+The manual half of the release — installing, launching, the native dialogs, Excel
+interoperability and uninstalling — is specified in `docs/WINDOWS_RELEASE_CHECKLIST.md` and
+**remains pending until it is executed on a real Windows machine**; nothing in this repository
+claims otherwise. Code signing is still out of scope, so Windows SmartScreen warns on first run.
+PDF export, record editing, saved filter presets, diagrams, accounts, cloud sync, scheduled
+imports, telemetry, auto-update and AI features remain out of scope and are deliberately not
+implemented.

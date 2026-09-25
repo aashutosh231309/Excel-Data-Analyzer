@@ -24,11 +24,12 @@ export function requireDependency(name) {
 }
 
 /** Reads and parses the packaging configuration plus the surrounding metadata. */
-export function loadReleaseInputs() {
-  const configPath = path.join(root, 'electron-builder.yml');
+export function loadReleaseInputs(baseDir = root) {
+  const configPath = path.join(baseDir, 'electron-builder.yml');
   const configText = readFileSync(configPath, 'utf8');
   const yaml = requireDependency('js-yaml');
-  const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const packageJson = JSON.parse(readFileSync(path.join(baseDir, 'package.json'), 'utf8'));
+  const configFile = readFileSync(configPath, 'utf8');
   return {
     configPath,
     configText,
@@ -36,8 +37,44 @@ export function loadReleaseInputs() {
     // product name and the description; the YAML config supplies the rest.
     packageJson,
     config: yaml.load(configText) ?? {},
-    mainSource: readFileSync(path.join(root, 'electron/main.ts'), 'utf8'),
+    baseDir,
+    configFile,
+    mainSource: readFileSync(path.join(baseDir, 'electron/main.ts'), 'utf8'),
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Files                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** Reads a repository-relative file, optionally from a copied candidate root. */
+export function readRelative(baseDir, relativePath) {
+  return readFileSync(path.join(baseDir, relativePath), 'utf8');
+}
+
+/**
+ * Removes block and line comments. The release checks look for code patterns,
+ * and a sentence in a comment ("the renderer receives no `require`") must never
+ * count as the code itself.
+ */
+export function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Lists the repository-relative files under a directory of a candidate root. */
+export function listRelative(baseDir, relativeDirectory) {
+  const directory = path.join(baseDir, relativeDirectory);
+  if (!existsSync(directory)) {
+    return [];
+  }
+  const walk = (current) =>
+    readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(current, entry.name);
+      return entry.isDirectory()
+        ? walk(full)
+        : [path.relative(baseDir, full).split(path.sep).join('/')];
+    });
+  return walk(directory).sort();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -237,12 +274,12 @@ function walk(directory) {
  * listing alone cannot: the bundles are packable as an archive, and the archive
  * contains exactly the resolved files and nothing else.
  */
-export async function packAsar({ files, destination }) {
+export async function packAsar({ files, destination, baseDir = root }) {
   const asar = requireDependency('@electron/asar');
   // The archive is written from the real files on disk; the library stats them
   // itself, so nothing about the contents is taken on trust.
-  const absolute = files.map((file) => path.join(root, file));
-  await asar.createPackageFromFiles(root, destination, absolute);
+  const absolute = files.map((file) => path.join(baseDir, file));
+  await asar.createPackageFromFiles(baseDir, destination, absolute);
   const listed = await asar.listPackage(destination);
   return listed.map((entry) => entry.replace(/^\//, '').replace(/\\/g, '/')).sort();
 }
