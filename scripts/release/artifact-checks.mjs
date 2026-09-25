@@ -111,6 +111,82 @@ export async function runArtifactChecks({ baseDir, report = createReport('artifa
   return report.results;
 }
 
+/**
+ * The file a finished Windows run leaves behind. The version is part of the
+ * name, so a report written for an older build never counts for this one.
+ */
+export const WINDOWS_REPORT_FILES = ['docs/WINDOWS_RELEASE_REPORT-0.2.0.md'];
+
+/**
+ * Decides whether a Windows QA report counts as evidence.
+ *
+ * The file existing is not enough. A report only counts when it records a
+ * finished run: a release decision of `RELEASE VALIDATION COMPLETE` or
+ * `RELEASE BLOCKED`, and the Windows machine it was produced on. An unfilled
+ * template, a report that still says `RELEASE VALIDATION PENDING`, or a report
+ * written anywhere other than Windows stays `NOT EXECUTED` — existence alone
+ * must never clear a manual blocker.
+ */
+/** Release decisions that count as finished, in either wording the template allows. */
+const COMPLETED_DECISIONS = ['release', 'release with known issues', 'block'];
+
+/** The decision a report records: the template's `| Decision | … |` row, or the heading after it. */
+function readReleaseDecision(content) {
+  const row = /^\|\s*Decision\s*\|\s*([^|]*)\|/im.exec(content);
+  if (row?.[1]) {
+    return row[1].trim();
+  }
+  return /Release decision([\s\S]{0,200})/i.exec(content)?.[1]?.trim() ?? '';
+}
+
+export function inspectWindowsReport(baseDir) {
+  const candidate = WINDOWS_REPORT_FILES.map((relative) => ({
+    relative,
+    absolute: path.join(baseDir, relative),
+  }))[0];
+
+  if (!candidate) {
+    return { completed: false, file: '', reason: 'no Windows report path is configured' };
+  }
+  if (!existsSync(candidate.absolute)) {
+    return { completed: false, file: candidate.relative, reason: `${candidate.relative} has not been written` };
+  }
+
+  const content = readFileSync(candidate.absolute, 'utf8');
+  const decision = readReleaseDecision(content);
+  const normalized = decision.toLowerCase();
+
+  // A report that still says PENDING is not evidence, whatever else it records.
+  if (normalized.includes('pending')) {
+    return {
+      completed: false,
+      file: candidate.relative,
+      reason: `${candidate.relative} still records RELEASE VALIDATION PENDING`,
+    };
+  }
+
+  const decided =
+    /release validation complete|release blocked/.test(normalized) || COMPLETED_DECISIONS.includes(normalized);
+  if (!decided) {
+    return {
+      completed: false,
+      file: candidate.relative,
+      reason: `${candidate.relative} records no finished release decision (found "${decision || 'nothing'}")`,
+    };
+  }
+
+  // A decision written anywhere other than Windows cannot be Windows evidence.
+  if (!/Windows\s+(?:10|11|Server)/i.test(content) || !/\bx64\b|\barm64\b/i.test(content)) {
+    return {
+      completed: false,
+      file: candidate.relative,
+      reason: `${candidate.relative} does not record the Windows machine and architecture it ran on`,
+    };
+  }
+
+  return { completed: true, file: candidate.relative, reason: `${candidate.relative} (decision: ${decision})` };
+}
+
 /** The checks that need a real Windows machine, listed for the report. */
 export const MANUAL_WINDOWS_CHECKS = [
   'Install the application through the NSIS installer',

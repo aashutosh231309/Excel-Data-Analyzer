@@ -27,7 +27,7 @@ import {
   stripComments,
 } from './harness.mjs';
 import { createReport, formatResults, summarize } from '../release/model.mjs';
-import { findArtifacts } from '../release/artifact-checks.mjs';
+import { WINDOWS_REPORT_FILES, findArtifacts, inspectWindowsReport } from '../release/artifact-checks.mjs';
 import { runStaticChecks } from '../release/static-checks.mjs';
 
 const GROUP_PREFLIGHT = 'release preflight';
@@ -148,6 +148,91 @@ async function verifyReleasePreflight(workspace) {
       artifacts.expectedPortableName === 'Excel Data Analyzer-0.2.0-Portable.exe' &&
       artifacts.installer === null,
     artifacts.installer ?? 'no installer built in this environment',
+  );
+
+  // --- the Windows report gate --------------------------------------------
+  // A report only counts as evidence when it records a finished run. A missing
+  // file, an untouched template, a report that still says PENDING and a report
+  // written on another operating system must all stay NOT EXECUTED, so a manual
+  // release blocker can never be cleared by writing a file.
+  const reportRoot = path.join(workspace, 'windows-report');
+  const reportPath = path.join(reportRoot, WINDOWS_REPORT_FILES[0] ?? '');
+  await mkdir(path.dirname(reportPath), { recursive: true });
+
+  const missingReport = inspectWindowsReport(reportRoot);
+
+  const template = await readFile(path.join(root, 'docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md'), 'utf8');
+  await writeFile(reportPath, template);
+  const unfilledTemplate = inspectWindowsReport(reportRoot);
+
+  await writeFile(
+    reportPath,
+    [
+      '# Windows release QA report — 0.2.0',
+      '',
+      '| Field | Value |',
+      '| ----- | ----- |',
+      '| Windows version and build | Windows 11 24H2, 26100.1742 |',
+      '| Architecture | x64 |',
+      '',
+      '## 15. Final release decision',
+      '',
+      '| Field | Value |',
+      '| ----- | ----- |',
+      '| Decision | RELEASE VALIDATION PENDING |',
+      '',
+    ].join('\n'),
+  );
+  const pendingReport = inspectWindowsReport(reportRoot);
+
+  const notEvidence = [missingReport, unfilledTemplate, pendingReport];
+  check(
+    GROUP_PREFLIGHT,
+    'a pending Windows report never clears the release blockers',
+    notEvidence.every((outcome) => outcome.completed === false) &&
+      pendingReport.reason.includes('PENDING') &&
+      unfilledTemplate.reason.includes('no finished release decision'),
+    notEvidence.map((outcome) => outcome.reason).join(' | '),
+  );
+
+  await writeFile(
+    reportPath,
+    [
+      '# Windows release QA report — 0.2.0',
+      '',
+      '| Field | Value |',
+      '| ----- | ----- |',
+      '| Windows version and build | Windows 11 24H2, 26100.1742 |',
+      '| Architecture | x64 |',
+      '| Date tested (local date) | 26/09/2026 |',
+      '',
+      '## 15. Final release decision',
+      '',
+      '| Field | Value |',
+      '| ----- | ----- |',
+      '| Decision | release |',
+      '',
+    ].join('\n'),
+  );
+  const finishedReport = inspectWindowsReport(reportRoot);
+  check(
+    GROUP_PREFLIGHT,
+    'a report of a finished run on Windows counts as evidence',
+    finishedReport.completed === true && finishedReport.reason.includes('decision: release'),
+    finishedReport.reason,
+  );
+
+  // The same decision without a Windows machine is not Windows evidence.
+  await writeFile(
+    reportPath,
+    ['# Windows release QA report — 0.2.0', '', '## 15. Final release decision', '', '| Decision | release |', ''].join('\n'),
+  );
+  const wrongMachineReport = inspectWindowsReport(reportRoot);
+  check(
+    GROUP_PREFLIGHT,
+    'a report that does not name a Windows machine is not Windows evidence',
+    wrongMachineReport.completed === false && wrongMachineReport.reason.includes('Windows machine'),
+    wrongMachineReport.reason,
   );
 
   // --- tamper detection ---------------------------------------------------

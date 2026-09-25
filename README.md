@@ -37,7 +37,7 @@ calculated totals. Everything runs locally — no server, no database, no accoun
 | Analytics workspace, data-quality and duplicate insights, session UX | Stage 5 ✅ |
 | Windows packaging, installer, portable build, release readiness | Stage 6 ✅ |
 | Release preflight, QA toolkit, final hardening | Stage 7 ✅ |
-| Windows runtime validation (installer, dialogs, Excel, uninstall) | **Pending a Windows machine** |
+| Windows runtime validation (installer, dialogs, Excel, uninstall) | **Pending a Windows machine** — [report](docs/WINDOWS_RELEASE_REPORT-0.2.0.md) |
 
 ---
 
@@ -203,11 +203,14 @@ excel-data-analyzer/
 │   │   ├── static-checks.mjs    #     configuration, security, hygiene, docs checks
 │   │   └── artifact-checks.mjs  #     installer/portable inspection (NOT EXECUTED when absent)
 │   ├── verify.mjs               # Verification entry point (runs every suite)
-│   └── verify/                  # Suites + shared harness + fictional fixtures
-│       ├── packaging.mjs        #   Release-input inspection helpers (shared)
-│       ├── stage1.mjs … stage6.mjs  # shell → import → filtering → export → analytics → packaging
+│   ├── verify/                  # Suites + shared harness + fictional fixtures
+│   │   ├── packaging.mjs        #   Release-input inspection helpers (shared)
+│   │   └── stage1.mjs … stage7.mjs  # shell → import → filtering → export → analytics → packaging → release
+│   └── validation/
+│       └── windows-fixture.mjs  # Writes the fictional workbooks used by the Windows QA run
 ├── build/                       # Generated app icons (icon.ico, icon.png, icons/)
-├── docs/                        # Windows release checklist + QA report template
+├── docs/                        # Windows release checklist, QA report template and report
+├── validation/                  # Fictional Windows validation workbooks + expected figures
 ├── electron-builder.yml         # Packaging configuration
 ├── index.html
 ├── package.json
@@ -479,7 +482,7 @@ Electron, and is memoized in `AnalyticsProvider` so nothing is recalculated per 
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **798 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **801 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -594,7 +597,10 @@ npm run verify
    `NOT EXECUTED`, a failing check becomes an automatic blocker and an unrunnable one a manual
    blocker, and tampered copies of the configuration (a wrong identifier, a missing icon, a
    `file://` renderer, extra packaged paths, a duplicated version, a missing checklist document)
-   are each proven to fail the corresponding check. The suite also freezes the normalized records
+   are each proven to fail the corresponding check. The Windows report gate is proven the same
+   way: a missing report, an untouched template, a report that still says `RELEASE VALIDATION
+   PENDING` and a report that does not name a Windows machine all stay `NOT EXECUTED`, so a manual
+   blocker can never be cleared by writing a file. The suite also freezes the normalized records
    and runs filtering, analytics, both inspections and the export preparation over them to prove
    the imported data is never mutated, and it verifies the QA documents are complete.
 
@@ -633,6 +639,12 @@ network, and never disables a security control to make a step succeed.
 > this sandbox (`npm run dist:win` → *unable to verify the first certificate*), and that limitation
 > is left untouched rather than bypassed by disabling certificate verification.
 
+The last attempt to run the Windows stage is recorded honestly in
+[`docs/WINDOWS_RELEASE_REPORT-0.2.0.md`](docs/WINDOWS_RELEASE_REPORT-0.2.0.md): every Windows item in
+it is marked **NOT EXECUTED**, no installer was produced and no Windows result is claimed. Re-running
+`npm run release:check` does not clear a single manual blocker while that report is pending — the
+preflight only counts a report that records a finished decision and the machine it ran on.
+
 Therefore, of record:
 
 | Item | Status |
@@ -655,6 +667,22 @@ launch, import, filtering, analytics, export, window behaviour, accessibility, o
 uninstallation and the optional portable build — including the PowerShell command that records the
 installer's SHA-256 with `Get-FileHash`. Results are written up with
 [`docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md`](docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md).
+
+The fictional workbooks that run needs are already prepared, together with the figure the interface
+must show for each one:
+
+```powershell
+node scripts/validation/windows-fixture.mjs --out validation --dated-today
+```
+
+That writes the main validation workbook (31 records covering the nine amount boundaries, every
+quality category, exact duplicates and near duplicates, a day-first date and three spellings of one
+vehicle), a 130-record pagination workbook, a workbook missing a required column, a truncated
+archive, a text file with a workbook extension and a legacy `.xls` — and adds records dated today and
+yesterday when the flags are used. [`validation/EXPECTED_RESULTS.md`](validation/EXPECTED_RESULTS.md)
+lists the expected counts, totals, averages, mode shares, ranges, quality figures, duplicate groups
+and filter results, each calculated by hand and checked against the application's own modules before
+the run.
 
 Two rules for that run:
 
@@ -683,7 +711,9 @@ as `PASS`, `FAIL` or `NOT EXECUTED` with the automatic and manual release blocke
 The manual half of the release — installing, launching, the native dialogs, Excel
 interoperability and uninstalling — is specified in `docs/WINDOWS_RELEASE_CHECKLIST.md` and
 **remains pending until it is executed on a real Windows machine**; nothing in this repository
-claims otherwise. Code signing is still out of scope, so Windows SmartScreen warns on first run.
+claims otherwise. Stage 8 prepared that run (the fictional workbooks with their expected figures, and
+a preflight that refuses to count a pending report as evidence) and recorded the attempt in
+`docs/WINDOWS_RELEASE_REPORT-0.2.0.md` with every Windows item marked **NOT EXECUTED**. Code signing is still out of scope, so Windows SmartScreen warns on first run.
 PDF export, record editing, saved filter presets, diagrams, accounts, cloud sync, scheduled
 imports, telemetry, auto-update and AI features remain out of scope and are deliberately not
 implemented.

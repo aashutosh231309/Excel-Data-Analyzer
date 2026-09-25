@@ -23,7 +23,6 @@
  * or reaches the network.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -34,7 +33,12 @@ import {
   formatResults,
   summarize,
 } from './release/model.mjs';
-import { MANUAL_WINDOWS_CHECKS, findArtifacts, runArtifactChecks } from './release/artifact-checks.mjs';
+import {
+  MANUAL_WINDOWS_CHECKS,
+  findArtifacts,
+  inspectWindowsReport,
+  runArtifactChecks,
+} from './release/artifact-checks.mjs';
 import { runStaticChecks } from './release/static-checks.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -123,25 +127,17 @@ await runArtifactChecks({ baseDir: root, report });
 /* -------------------------------------------------------------------------- */
 
 report.section('manual windows validation');
-const completedReport = ['docs/WINDOWS_RELEASE_REPORT-0.2.0.md']
-  .map((file) => path.join(root, file))
-  .find(
-    (file) =>
-      existsSync(file) && /Release decision\s*\|?\s*(release|block)/i.test(readFileSync(file, 'utf8')),
-  );
-if (completedReport) {
-  report.add(
-    'a completed Windows QA report is attached to this release',
-    PASS,
-    path.relative(root, completedReport),
-  );
-} else {
-  report.add(
-    'a completed Windows QA report is attached to this release',
-    NOT_EXECUTED,
-    'docs/WINDOWS_RELEASE_REPORT_TEMPLATE.md has not been filled in on Windows',
-  );
-}
+/**
+ * Only a report of a finished run counts. `inspectWindowsReport` requires a real
+ * release decision and the Windows machine behind it, so a pending or unfilled
+ * report cannot clear this blocker by existing.
+ */
+const windowsReport = inspectWindowsReport(root);
+report.add(
+  'a completed Windows QA report is attached to this release',
+  windowsReport.completed ? PASS : NOT_EXECUTED,
+  windowsReport.reason,
+);
 for (const check of MANUAL_WINDOWS_CHECKS) {
   report.add(check, NOT_EXECUTED, 'requires a real Windows machine');
 }

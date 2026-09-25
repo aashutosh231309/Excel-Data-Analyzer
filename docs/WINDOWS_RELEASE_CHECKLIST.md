@@ -9,9 +9,11 @@ Windows machine by a person; nothing in this repository can execute it for you.
 > behaviour only — it never claims these items.
 
 Print or copy this file, run the checklist top to bottom, and record the outcome in
-[`WINDOWS_RELEASE_REPORT_TEMPLATE.md`](WINDOWS_RELEASE_REPORT_TEMPLATE.md). Use a **fictional**
-workbook for the import/export steps: this project is tested with invented payment records only, and
-release testing should not involve real personal or financial data.
+[`WINDOWS_RELEASE_REPORT-0.2.0.md`](WINDOWS_RELEASE_REPORT-0.2.0.md) — the template is at
+[`WINDOWS_RELEASE_REPORT_TEMPLATE.md`](WINDOWS_RELEASE_REPORT_TEMPLATE.md). Use the prepared
+**fictional** workbooks in `validation/` for the import/export steps, and compare the figures the
+interface shows with `validation/EXPECTED_RESULTS.md`: this project is tested with invented payment
+records only, and release testing should not involve real personal or financial data.
 
 ---
 
@@ -24,7 +26,7 @@ release testing should not involve real personal or financial data.
 | Installer under test | `release/Excel Data Analyzer-0.2.0-Setup.exe` |
 | Portable under test | `release/Excel Data Analyzer-0.2.0-Portable.exe` (optional) |
 | Excel | Microsoft Excel (any current version) or another spreadsheet application, for the export interop checks |
-| Test workbook | A fictional `.xlsx` and a fictional `.xls` with the seven columns: Date, Name, Vehicle Number, Payment Mode, Amount, Payment Reason, Remark |
+| Test workbook | The prepared fictional workbooks in `validation/` — regenerate them with `node scripts/validation/windows-fixture.mjs --out validation --dated-today` so the Today and Yesterday checks have data. Every expected figure is written down in `validation/EXPECTED_RESULTS.md`. |
 
 Before installing anything, record the artefact hashes so the file you tested can be identified
 later:
@@ -74,8 +76,8 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 ## 3. Import
 
 - [ ] **Browse Excel File** opens the native Windows file picker filtered to `.xlsx` / `.xls`.
-- [ ] A fictional `.xlsx` workbook with the seven columns imports: the Data screen shows the record count, the statistics and the table.
-- [ ] A fictional `.xls` workbook imports through the same path.
+- [ ] `validation/Excel Data Analyzer - Validation Data.xlsx` imports: the Data screen shows 31 records, 28 with a valid amount, ₹72,447.00 in total and the table (see `validation/EXPECTED_RESULTS.md`).
+- [ ] `validation/Excel Data Analyzer - Legacy Validation Data.xls` imports through the same path: 7 records, ₹2,000.00 in total.
 - [ ] A workbook whose first sheet has no transaction columns falls back to the sheet that has them.
 - [ ] A workbook with several valid sheets offers the worksheet switcher, and switching re-loads that sheet without restarting.
 - [ ] A workbook missing a required column (for example *Vehicle Number*) reports *"Required columns are missing: • Vehicle Number"* and keeps the previous dataset.
