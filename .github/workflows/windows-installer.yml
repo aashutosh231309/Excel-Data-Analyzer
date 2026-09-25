@@ -44,8 +44,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build installers on Windows
+  # The artefacts come first and are independent of the automated suite, so a
+  # failure in the suite can never cost you the files it can still build.
+  installers:
+    name: Build the Windows installers
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -61,12 +63,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Build and run every automated check
-        run: npm run verify
-
-      - name: Type check
-        run: npx tsc --noEmit
 
       - name: Build the NSIS installer
         run: npm run dist:win
@@ -85,8 +81,6 @@ jobs:
             Write-Host ("SHA256  {0}  {1}" -f $hash, $_.Name)
           }
 
-      # Uploaded before the preflight so a failing check can never cost you the
-      # artefacts themselves.
       - name: Upload the Windows artefacts
         uses: actions/upload-artifact@v4
         with:
@@ -103,3 +97,44 @@ jobs:
       # NOT EXECUTED and inspect the installer that was just built.
       - name: Release preflight over the real artefacts
         run: npm run release:check -- --static
+
+  # The full suite on Windows. Its failures are surfaced as annotations, because
+  # a failed step's log is not always reachable from outside the repository.
+  verification:
+    name: Automated suite on Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and run every automated check
+        shell: pwsh
+        run: |
+          # Mark the exact check that failed as an annotation, so it is visible
+          # without opening the raw log.
+          npm run verify 2>&1 | Tee-Object -FilePath verify.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $failures = Select-String -Path verify.log -Pattern '[FAIL]' -SimpleMatch |
+              Select-Object -First 8
+            foreach ($failure in $failures) {
+              Write-Host ("::error::FAILED ON WINDOWS: " + $failure.Line.Trim())
+            }
+            $tail = Get-Content verify.log -Tail 12
+            Write-Host ("::error::" + ($tail -join ' | '))
+            exit $code
+          }
+
+      - name: Type check
+        run: npx tsc --noEmit
