@@ -110,7 +110,12 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
   /* ---------------------------------------------------------------------- */
 
   const applyResult = useCallback(
-    (result: ImportResult, token: number): ImportOutcome => {
+    (
+      result: ImportResult,
+      token: number,
+      /** What produced this result, so the notification tells the truth. */
+      source: 'import' | 'worksheet' = 'import',
+    ): ImportOutcome => {
       if (token !== importToken.current) {
         return 'failed';
       }
@@ -127,7 +132,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
           setStatus('ready');
           notify({
             variant: workbook.statistics.recordsWithIssues > 0 ? 'warning' : 'success',
-            title: 'Excel file imported successfully',
+            title: source === 'worksheet' ? 'Worksheet loaded' : 'Excel file imported successfully',
             description: buildImportDescription(workbook.statistics, workbook.sheetName),
           });
           return 'imported';
@@ -354,7 +359,7 @@ export function DatasetProvider({ children }: { children: ReactNode }) {
 
       try {
         const result = await bridge.excel.selectWorksheet(file.path, nextSheetName);
-        return applyResult(result, token);
+        return applyResult(result, token, 'worksheet');
       } catch {
         setProgress(null);
         setStatus(dataset ? 'ready' : 'error');

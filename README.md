@@ -244,7 +244,7 @@ required column produces the message *"Required columns are missing: • Vehicle
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **318 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **319 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.

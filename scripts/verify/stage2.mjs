@@ -1003,6 +1003,12 @@ async function verifyRendererImport(workspace) {
       calls.selectedSheets.includes('July Payments'),
       calls.selectedSheets.join(','),
     );
+    check(
+      group,
+      'switching worksheets reports itself instead of claiming a new import',
+      app.text().includes('Worksheet loaded'),
+      app.text().replace(/\s+/g, ' ').slice(0, 160),
+    );
     const switchRows = Array.from(app.document.querySelectorAll('tbody tr'));
     check(group, 'the table is replaced by the chosen worksheet', switchRows.length === 2, String(switchRows.length));
     app.close();
