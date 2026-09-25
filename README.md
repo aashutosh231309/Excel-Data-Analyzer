@@ -675,11 +675,12 @@ must show for each one:
 node scripts/validation/windows-fixture.mjs --out validation --dated-today
 ```
 
-That writes the main validation workbook (31 records covering the nine amount boundaries, every
-quality category, exact duplicates and near duplicates, a day-first date and three spellings of one
-vehicle), a 130-record pagination workbook, a workbook missing a required column, a truncated
-archive, a text file with a workbook extension and a legacy `.xls` — and adds records dated today and
-yesterday when the flags are used. [`validation/EXPECTED_RESULTS.md`](validation/EXPECTED_RESULTS.md)
+That writes the main validation workbook (33 records covering the nine amount boundaries, every
+quality category, exact duplicates and near duplicates that each change one field, a day-first date
+written as text, a date cell that also carries a time, and three spellings of one vehicle), a
+130-record pagination workbook, a workbook missing a required column, a truncated archive, a text
+file with a workbook extension and a legacy `.xls` — and adds records dated today and yesterday when
+the flag is used. [`validation/EXPECTED_RESULTS.md`](validation/EXPECTED_RESULTS.md)
 lists the expected counts, totals, averages, mode shares, ranges, quality figures, duplicate groups
 and filter results, each calculated by hand and checked against the application's own modules before
 the run.

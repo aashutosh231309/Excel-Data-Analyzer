@@ -123,7 +123,7 @@ useful answer, and it is the honest one until a real Windows run has happened.
 | Save dialog (default name, cancelling safe) | | |
 | Drag & drop path resolution | | |
 
-## 10. Window, accessibility and offline results
+## 10. Window, interface, accessibility and offline results
 
 | Item | Result | Notes |
 | ---- | ------ | ----- |
@@ -131,6 +131,9 @@ useful answer, and it is the honest one until a real Windows run has happened.
 | Minimum size 900 × 620 usable | | |
 | Maximized 1920 × 1080 usable | | |
 | Keyboard navigation and focus rings | | |
+| Hover feedback, transitions and motion behave as designed | | |
+| Long text truncates with a reachable tooltip | | |
+| Empty states, loading states and error states read correctly | | |
 | Offline import → filter → analyze → export | | |
 | No network connections observed | | |
 

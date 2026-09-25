@@ -38,7 +38,7 @@ function localIsoDate(value) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Payments September — the main validation sheet (31 records)                 */
+/* Payments September — the main validation sheet (33 records)                 */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -164,6 +164,37 @@ const OCTOBER_ROWS = [
   { date: date(2026, 10, 2), name: 'Bhavna Rao', vehicle: 'UP32ZZ2222', mode: 'Cash', amount: 800, reason: 'Toll', remark: 'Second worksheet' },
   { date: date(2026, 10, 3), name: 'Chirag Jain', vehicle: 'UP32ZZ3333', mode: 'Cheque', amount: 25000, reason: 'Advance', remark: 'Second worksheet' },
   { date: date(2026, 10, 4), name: 'Dia Kapoor', vehicle: 'UP32ZZ4444', mode: 'Bank Transfer', amount: 450, reason: 'Parking', remark: 'Second worksheet' },
+];
+
+/**
+ * Group G — appended after group F so the row numbers of every row above stay
+ * stable for the checklist.
+ *
+ *   1. a real Excel date cell that also carries a time of day: the calendar date
+ *      must survive it (26/09/2026, not 27/09 and not blank)
+ *   2. the near-duplicate base row with only the remark changed: because the
+ *      remark is part of the duplicate signature, this row is a different
+ *      record and must stay out of the duplicate group
+ */
+const ADDITIONAL_ROWS = [
+  {
+    date: new Date(2026, 8, 26, 14, 30),
+    name: 'Naveen Rao',
+    vehicle: 'UP32DT1001',
+    mode: 'UPI',
+    amount: 1250,
+    reason: 'Fuel',
+    remark: 'Date cell with a time of day (26/09/2026 14:30)',
+  },
+  {
+    date: date(2026, 9, 20),
+    name: 'Tanvi Desai',
+    vehicle: 'UP65IJ8901',
+    mode: 'UPI',
+    amount: 3000,
+    reason: 'Fuel',
+    remark: 'Near duplicate comparison row — remark changed',
+  },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -336,6 +367,7 @@ async function main() {
     ...NEAR_DUPLICATE_ROWS,
     ...VEHICLE_ROWS,
     ...WRITTEN_DATE_ROWS,
+    ...ADDITIONAL_ROWS,
   ];
   const records = options.datedToday ? [...september, ...datedTodayRows()] : september;
 

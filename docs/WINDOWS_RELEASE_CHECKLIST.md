@@ -22,11 +22,35 @@ records only, and release testing should not involve real personal or financial 
 | Item | Value |
 | ---- | ----- |
 | Build machine | Windows 10 or 11, x64, with Node.js ≥ 20.19 and npm |
-| Build command | `npm install` then `npm run dist:win` |
+| Build command | the sequence below, in this order |
 | Installer under test | `release/Excel Data Analyzer-0.2.0-Setup.exe` |
 | Portable under test | `release/Excel Data Analyzer-0.2.0-Portable.exe` (optional) |
 | Excel | Microsoft Excel (any current version) or another spreadsheet application, for the export interop checks |
 | Test workbook | The prepared fictional workbooks in `validation/` — regenerate them with `node scripts/validation/windows-fixture.mjs --out validation --dated-today` so the Today and Yesterday checks have data. Every expected figure is written down in `validation/EXPECTED_RESULTS.md`. |
+
+Run these commands from the repository root before testing anything. Every one of them must be run
+for real; a skipped command is recorded as **NOT EXECUTED**, never assumed to have passed:
+
+```powershell
+npm install
+npm run verify                              # expect 801/801 checks, no failures
+npx tsc --noEmit                            # expect no output
+npm run build                               # production renderer, main process, preload
+node scripts/validation/windows-fixture.mjs --out validation --dated-today
+npm run dist:win                            # produces release/Excel Data Analyzer-0.2.0-Setup.exe
+npm run release:check                       # expect 0 FAIL; the artefact checks must stop saying NOT EXECUTED
+```
+
+Then confirm what the build actually produced. Only report files that exist:
+
+```powershell
+Get-ChildItem ".\release" | Select-Object Name, Length
+```
+
+`Get-ChildItem ".\release\win-unpacked"` should show the unpacked application, and
+`Get-ChildItem ".\release\*.blockmap", ".\release\latest.yml" -ErrorAction SilentlyContinue`
+shows the update metadata Electron Builder emits. Nothing in `release/` is committed to the
+repository.
 
 Before installing anything, record the artefact hashes so the file you tested can be identified
 later:
@@ -76,7 +100,7 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 ## 3. Import
 
 - [ ] **Browse Excel File** opens the native Windows file picker filtered to `.xlsx` / `.xls`.
-- [ ] `validation/Excel Data Analyzer - Validation Data.xlsx` imports: the Data screen shows 31 records, 28 with a valid amount, ₹72,447.00 in total and the table (see `validation/EXPECTED_RESULTS.md`).
+- [ ] `validation/Excel Data Analyzer - Validation Data.xlsx` imports: the Data screen shows 33 records, 30 with a valid amount, ₹76,697.00 in total and the table (see `validation/EXPECTED_RESULTS.md`).
 - [ ] `validation/Excel Data Analyzer - Legacy Validation Data.xls` imports through the same path: 7 records, ₹2,000.00 in total.
 - [ ] A workbook whose first sheet has no transaction columns falls back to the sheet that has them.
 - [ ] A workbook with several valid sheets offers the worksheet switcher, and switching re-loads that sheet without restarting.
@@ -84,6 +108,7 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 - [ ] A damaged/truncated file reports a readable message and no stack trace.
 - [ ] A file that is not a spreadsheet, a folder with a spreadsheet extension and a deleted file are each rejected with a readable message.
 - [ ] A file dropped onto the drop zone imports the same way.
+- [ ] Row 33 of `Payments September` is a real date cell that also carries 14:30: it must import as **26/09/2026**, keep that calendar date in the table, and be found by the date filter `26/09/2026` (see `validation/EXPECTED_RESULTS.md` §2.9).
 - [ ] Invalid amounts and invalid dates are visible with their warning markers and are **never** shown as `₹0`.
 
 ## 4. Filtering
@@ -102,6 +127,7 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 - [ ] **Clear Filters** returns to the full dataset and the *"No filters applied yet"* hint.
 - [ ] The filtered figures (`Filtered Records`, `Total Amount`, `Average Amount`) match the rows listed in the table.
 - [ ] With more than one page of results, applying a new filter returns the table to page 1 and the page count follows the matches.
+- [ ] Pagination on `validation/Excel Data Analyzer - Pagination Data.xlsx` (130 records): the 50 page size gives **3 pages** (50 / 50 / 30), the 100 page size gives **2 pages** (100 / 30) and the 250 page size gives **1 page**; the counts add up to 130 and no record disappears.
 - [ ] Pagination: `‹ Previous` / `Next ›`, page numbers and the 50/100/250 page-size selector all work; changing the page size returns to page 1; the buttons are disabled at the bounds.
 
 ## 5. Analytics
@@ -114,7 +140,9 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 - [ ] **Amount Distribution** shows the five application-defined ranges (₹0–499, ₹500–999, ₹1 000–4 999, ₹5 000–9 999, ₹10 000 and above) with counts and shares of the valid amounts.
 - [ ] **Data Quality** counts each category; the summary shows total records, records with at least one problem and the percentage; a record with several problems appears once in the affected count.
 - [ ] Clicking a quality category opens the affected rows in the existing table under a *Data Quality Inspection* banner; the filters, the totals and the export control are unchanged; **Back to results** restores exactly the previous screen.
-- [ ] **Duplicate Insight** lists exact duplicate groups with the record count and the notice *"Possible duplicate records are informational only. No records have been removed."*; clicking a group opens those rows; nothing is deleted, merged or labelled fraudulent.
+- [ ] **Duplicate Insight** on the main fixture shows **2 groups of 6 records**: rows 20–22 (the exact triple) and rows 23, 27, 28 (vehicle separators and name spacing ignored).
+- [ ] Rows 24 (amount changed), 25 (payment reason changed), 26 (vehicle changed) and 34 (remark changed only) are **not** in any group — a record that differs by one field is a different record.
+- [ ] The notice *"Possible duplicate records are informational only. No records have been removed."* is present; clicking a group opens those rows; nothing is deleted, merged or labelled fraudulent.
 - [ ] Inspections are keyboard reachable (<kbd>Tab</kbd> to the card, <kbd>Enter</kbd> to open, focus ring visible).
 
 ## 6. Export
@@ -180,6 +208,18 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 - [ ] Core workflow (import → filter → dashboard → export) works identically to the installed build.
 - [ ] Closing it leaves no `%TEMP%` leftovers that hold open file handles.
 
+## 12. Interface and visual quality
+
+- [ ] At the default window size the layout has a clear hierarchy: cards align, spacing is even, nothing overlaps and nothing is clipped.
+- [ ] At the maximized size the dashboard, the table and the inspection views stay aligned and readable (no stretched or collapsed columns).
+- [ ] Hovering a row, button or card gives immediate, subtle feedback; moving the pointer away removes it without a flash or a flicker.
+- [ ] Transitions and the toast/notification animations are short and calm — nothing bounces, loops or spins indefinitely.
+- [ ] Long file names, long worksheet names, long names and long remarks truncate with an ellipsis and a tooltip that can be reached by keyboard, never overflow their cell.
+- [ ] Empty states (no workbook loaded, no filters applied yet, no matching records) each explain what to do next, and read correctly rather than showing a blank panel.
+- [ ] The import progress/loading state is visible while a workbook is being read and disappears when it finishes; the interface never looks frozen.
+- [ ] Error states (missing columns, unreadable file, failed export) use the documented wording and are readable at both window sizes.
+- [ ] Scrolling is smooth in the page and in the table; hover and focus states are visually distinguishable from each other.
+
 ---
 
 ## Sign-off
@@ -193,4 +233,7 @@ the product name (`Excel Data Analyzer`) and version (`0.2.0`) shown by Windows.
 | Was an export ever written without confirmation of the dialog? | must be **no** |
 | Release decision | release / release with known issues / block |
 
-Record the details in [`WINDOWS_RELEASE_REPORT_TEMPLATE.md`](WINDOWS_RELEASE_REPORT_TEMPLATE.md).
+Record the details in [`WINDOWS_RELEASE_REPORT-0.2.0.md`](WINDOWS_RELEASE_REPORT-0.2.0.md) (the
+template is [`WINDOWS_RELEASE_REPORT_TEMPLATE.md`](WINDOWS_RELEASE_REPORT_TEMPLATE.md)). Every item
+that was not executed must say **NOT EXECUTED** — that is a valid, useful answer, and it is the
+honest one until it has really been run.

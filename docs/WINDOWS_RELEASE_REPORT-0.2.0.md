@@ -14,8 +14,8 @@
 | --- | --- |
 | Application | Excel Data Analyzer 0.2.0 |
 | Application id | `com.exceldataanalyzer.app` |
-| Revision under test | `b145a1b` plus the Stage 8 changes described in section 12 |
-| Report written | 25/09/2026 |
+| Revision under test | `d95ba28` (Stage 8) plus the Stage 9 handoff changes recorded in section 12 |
+| Report written | 25/09/2026 (Stage 8); handoff completed in Stage 9 |
 | Result | **RELEASE VALIDATION PENDING** |
 
 ## 1. Build and environment
@@ -102,8 +102,13 @@ the seven quality categories, the duplicate groups and every filter combination.
 calculated from the fixture definition and checked against the application's own import, analytics
 and filtering modules outside Windows; that check is *not* Windows validation.
 
-The workbooks: main validation data (31 records, three worksheets), pagination data (130 records),
+The workbooks: main validation data (33 records, three worksheets), pagination data (130 records),
 missing required column, truncated archive, plain text with a `.xlsx` extension, and a legacy `.xls`.
+The main workbook carries the nine amount boundaries, every quality category, a record with seven
+problems, an exact duplicate group of three, near duplicates that each change exactly one field —
+including one that changes only the remark — a vehicle written three ways, a date written as text
+whose day proves the day-first rule, and a real date cell that also holds 14:30 (it must keep the
+calendar date 26/09/2026).
 `node scripts/validation/windows-fixture.mjs --out validation --dated-today` regenerates them and adds
 records dated today and yesterday so the **Today** and **Yesterday** filters have data on the day of
 the run.
@@ -206,6 +211,19 @@ Finding 2 is exactly why the fixtures were put through the real modules before b
 hand-written expectation would otherwise have been wrong, and the Windows run would have reported a
 false failure.
 
+The Stage 9 handoff then closed four gaps that would have forced a Windows operator to improvise:
+
+| # | Gap | Closed by |
+| - | --- | --------- |
+| 3 | No row differed **only by its remark**, so the "a different remark is not a duplicate" case could not be tested | Row 34 added to the main workbook; verified against the duplicate signature |
+| 4 | No date cell carried a time of day, so "a date + time keeps its calendar date" could not be tested | Row 33 added: a real Excel date serial with a 14:30 fraction, verified to parse to 26/09/2026 |
+| 5 | The pagination checks named no workbook and no expected page counts | The checklist now points at the 130-record fixture and requires 3 pages at 50, 2 at 100 and 1 at 250 |
+| 6 | No checklist items covered hover, motion, truncation, empty and loading states | New checklist section 12, with matching rows in the report template |
+
+Every figure in `validation/EXPECTED_RESULTS.md` was re-derived and re-verified against the real
+import, analytics and filtering modules after rows 33 and 34 were added. No application code was
+touched for any of these; 801/801 automated checks still pass.
+
 ## 13. Remaining issues
 
 | Issue | Impact | Decision |
@@ -245,7 +263,10 @@ Excel, and no uninstall has been performed.
 
 ## 16. How to finish this report
 
-1. Build on Windows: `npm install`, `npm run verify`, `npm run build`, `npm run dist:win`.
+1. Build on Windows, in this order: `npm install`, `npm run verify`, `npx tsc --noEmit`,
+   `npm run build`, `node scripts/validation/windows-fixture.mjs --out validation --dated-today`,
+   `npm run dist:win`, then `npm run release:check` (expect 0 FAIL, and the five artefact checks no
+   longer `NOT EXECUTED`).
 2. Record the installer and portable names and their `Get-FileHash -Algorithm SHA256` values in
    section 1.
 3. Execute [`WINDOWS_RELEASE_CHECKLIST.md`](WINDOWS_RELEASE_CHECKLIST.md) using the prepared fictional
