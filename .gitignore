@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tmp
+.tmp/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Electron packaging caches
+.cache/

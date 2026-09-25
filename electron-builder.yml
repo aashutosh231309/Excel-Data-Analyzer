@@ -1,0 +1,47 @@
+# Packaging configuration for the standalone desktop application.
+# Windows installers are produced with:  npm run dist:win
+appId: com.exceldataanalyzer.app
+productName: Excel Data Analyzer
+copyright: Copyright © 2026 Excel Data Analyzer
+
+directories:
+  buildResources: build
+  output: release
+
+# Only the compiled bundles are packaged: the renderer already contains React,
+# Tailwind, SheetJS and Lucide, so no node_modules need to ship with the app.
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - '!node_modules/**/*'
+
+asar: true
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Excel Data Analyzer
+
+linux:
+  icon: build/icon.png
+  category: Office
+  target:
+    - AppImage
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.productivity
+  target:
+    - dmg
