@@ -29,7 +29,12 @@
     overscroll-behavior: contain;
   }
 
-  :focus-visible {
+  /*
+   * Keyboard focus is always visible. Components that declare their own
+   * `focus-visible:ring-*` treatment keep a single, cleaner indicator; every
+   * other focusable element falls back to this outline.
+   */
+  :focus-visible:not([class*='focus-visible:ring']) {
     outline: 2px solid theme('colors.accent.DEFAULT');
     outline-offset: 2px;
   }
