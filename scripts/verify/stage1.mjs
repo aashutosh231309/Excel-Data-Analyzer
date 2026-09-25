@@ -603,6 +603,7 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
   window.excelDataAnalyzer = {
     app: {
       getPlatformInfo: async () => ({
+        appName: 'Excel Data Analyzer',
         platform: 'win32',
         appVersion: '0.1.0',
         electronVersion: '44.0.0',
@@ -924,6 +925,9 @@ async function verifyMainProcess(workspace) {
           state.quitCalls += 1;
         },
         getVersion: () => '0.1.0',
+        // Electron resolves this from the packaged application metadata; the
+        // mock reports the same name the interface must display.
+        getName: () => 'Excel Data Analyzer',
         isPackaged: false,
       },
       BrowserWindow: FakeBrowserWindow,
@@ -1208,11 +1212,20 @@ async function verifyMainProcess(workspace) {
 
   // --- platform info & window commands -----------------------------------
   const platformInfo = await invoke('app:get-platform-info');
-  const platformKeys = ['platform', 'appVersion', 'electronVersion', 'chromeVersion', 'nodeVersion', 'isPackaged'];
+  const platformKeys = [
+    'appName',
+    'platform',
+    'appVersion',
+    'electronVersion',
+    'chromeVersion',
+    'nodeVersion',
+    'isPackaged',
+  ];
   check(
     'main process',
     'platform information is reported read-only',
     platformKeys.every((key) => key in platformInfo) &&
+      platformInfo.appName === 'Excel Data Analyzer' &&
       platformInfo.appVersion === '0.1.0' &&
       platformInfo.isPackaged === false &&
       platformInfo.nodeVersion === process.versions.node,

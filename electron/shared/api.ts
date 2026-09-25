@@ -40,6 +40,8 @@ export interface WindowState {
 }
 
 export interface PlatformInfo {
+  /** Application name as reported by Electron (`app.getName()`). */
+  appName: string;
   platform: string;
   appVersion: string;
   electronVersion: string;

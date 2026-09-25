@@ -1,4 +1,4 @@
-import { HardDrive, Lock, ShieldCheck } from 'lucide-react';
+import { FileSpreadsheet, HardDrive, Lock, ShieldCheck } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { usePlatformInfo } from '@/hooks/usePlatformInfo';
@@ -22,6 +22,11 @@ const PRIVACY_NOTES = [
   'Nothing is uploaded: the application makes no external network requests.',
   'No account, telemetry or cloud service is involved.',
 ];
+
+/** Product copy shown in the About card; never a version or a build detail. */
+const PRODUCT_DESCRIPTION =
+  'Offline desktop application to import, filter and analyze Excel payment records.';
+const COPYRIGHT_NOTICE = 'Copyright © 2026 Excel Data Analyzer';
 
 interface RuntimeRow {
   label: string;
@@ -78,6 +83,46 @@ export function SettingsPage() {
               </li>
             ))}
           </ul>
+        </Card>
+
+        <Card
+          padding="lg"
+          className="flex flex-col gap-4 lg:col-span-2"
+          data-about
+          data-about-build={
+            platform.status === 'ready' ? (platform.info.isPackaged ? 'installed' : 'development') : undefined
+          }
+        >
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4 text-accent" aria-hidden="true" />
+            <h2 className="text-sm font-semibold text-content">About</h2>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-accent-gradient shadow-glow">
+              <FileSpreadsheet className="h-5 w-5 text-white" aria-hidden="true" />
+            </span>
+            <div className="flex min-w-0 flex-col gap-1">
+              <p data-about-name className="text-[13px] font-semibold text-content">
+                {platform.status === 'ready' ? platform.info.appName : PLACEHOLDER_VALUE}
+              </p>
+              <p className="text-[12px] leading-relaxed text-content-secondary">
+                {PRODUCT_DESCRIPTION}
+              </p>
+              <p className="text-[12px] text-content-muted">
+                <span data-about-version-label>Version</span>{' '}
+                <span data-about-version className="tabular-nums">
+                  {platform.status === 'ready' ? platform.info.appVersion : PLACEHOLDER_VALUE}
+                </span>
+                {' · '}
+                {platform.status === 'ready'
+                  ? platform.info.isPackaged
+                    ? 'Installed build'
+                    : 'Development build'
+                  : PLACEHOLDER_VALUE}
+              </p>
+              <p className="text-[12px] text-content-muted">{COPYRIGHT_NOTICE}</p>
+            </div>
+          </div>
         </Card>
 
         <Card padding="lg" className="flex flex-col gap-4 lg:col-span-2">

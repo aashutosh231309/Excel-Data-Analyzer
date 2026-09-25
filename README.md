@@ -6,7 +6,7 @@ Load a spreadsheet containing **Date, Name, Vehicle Number, Payment Mode, Amount
 and Remark**, then filter by **date, name, vehicle number and amount** with automatically
 calculated totals. Everything runs locally — no server, no database, no account, no upload.
 
-> **Stage 5 status — the analytics workspace, data quality insights and session UX.**
+> **Stage 6 status — Windows release packaging.**
 > The application reads `.xlsx` / `.xls` workbooks locally, normalizes every value into a typed
 > record, filters by **date, name, vehicle number and amount** in any combination, calculates the
 > matching **record count, total amount and average amount** automatically and exports **exactly
@@ -16,9 +16,11 @@ calculated totals. Everything runs locally — no server, no database, no accoun
 > amount distribution, a data-quality summary and an informational duplicate insight — all of them
 > calculated once from the records that are already in memory. A quality or duplicate insight opens
 > the affected rows in the existing table without filtering, editing or deleting anything.
-> Record editing, filter presets, diagrams and packaging polish are deliberately not part of this
-> build. The interface never invents figures: every number on screen comes from the parsed
-> workbook.
+> The project is now packaged for Windows: a per-user NSIS installer, an optional portable build,
+> a multi-resolution application icon, the application metadata (name, identifier, version) in one
+> place and a release check that validates the packaging inputs. Record editing, filter presets and
+> diagrams are deliberately not part of this build. The interface never invents figures: every
+> number on screen comes from the parsed workbook.
 
 ---
 
@@ -57,25 +59,49 @@ mode and opens the desktop window against the dev server.
 | ------------------------- | -------------------------------------------------------------- |
 | `npm run dev`             | Development: Vite dev server + Electron with hot reload         |
 | `npm run dev:renderer`    | Renderer only, in a browser (useful for UI work)                |
-| `npm run build`           | Type-check, then build main/preload (`dist-electron`) and UI (`dist`) |
+| `npm run build`           | Type-check, generate the icons, then build main/preload (`dist-electron`) and UI (`dist`) |
 | `npm run typecheck`       | TypeScript strict-mode check with no emit                       |
 | `npm start`               | Build and run the packaged-style application (`electron .`)     |
-| `npm run verify`          | Build, then run every verification suite (Stages 1–5)             |
+| `npm run verify`          | Build, then run every verification suite (Stages 1–6)             |
 | `npm run verify:only`     | Run the suites against the existing `dist/` build                 |
+| `npm run release:check`   | Validate the release inputs (identity, configuration, icons, archive contents) |
 | `npm run icons`           | Regenerate `build/icon.ico` / `build/icon.png`                  |
 | `npm run pack`            | Unpacked application directory (`release/`)                     |
 | `npm run dist:win`        | Windows installer (NSIS, x64)                                   |
+| `npm run dist:win:portable` | Portable Windows single-file build (no installation)          |
 | `npm run dist:linux`      | Linux AppImage (for local packaging checks)                     |
 
 ### Building the Windows application
 
 ```bash
-npm run dist:win
+npm run release:check     # validate the release inputs (no Electron needed)
+npm run dist:win          # build and package the NSIS installer
+npm run dist:win:portable # optional: a single executable that needs no installation
 ```
 
-The installer is written to `release/Excel Data Analyzer-<version>-Setup.exe` (NSIS, per-user
-install, selectable installation directory, desktop and Start-menu shortcuts). `npm run pack`
-produces an unpacked `release/win-unpacked/` directory for quick smoke tests.
+Everything is written to `release/` (ignored by git — no generated installer is ever committed):
+
+| Artefact                                   | What it is                                              |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `release/Excel Data Analyzer-0.2.0-Setup.exe` | The per-user Windows installer (NSIS, x64)            |
+| `release/Excel Data Analyzer-0.2.0-Portable.exe` | A portable build that runs without installing       |
+| `release/win-unpacked/`                     | The unpacked application, produced by `npm run pack`     |
+| `release/latest.yml`, `release/*.blockmap`  | Update metadata Electron Builder writes next to the build |
+
+The installer is a conventional per-user installation: no administrator prompt, installs under
+`%LOCALAPPDATA%\Programs\Excel Data Analyzer`, creates an entry in *Windows Settings → Apps →
+Installed apps* and Start-menu (and desktop) shortcuts, and can be removed from there like any
+other application. The portable build unpacks the same application code into a temporary folder
+when it is launched, so it uses the identical security architecture and leaves no installation
+behind.
+
+`npm run dist:win` and `npm run dist:win:portable` download the Electron runtime the first time
+they run and therefore need a network connection; the packaged application itself never does.
+
+**Environment note.** The automated suites, the release check and the renderer/main bundles are
+verified headlessly in this checkout. Building the installer, installing it, launching the
+application, the native Windows dialogs and the uninstaller require a Windows machine with the
+Electron runtime available — see *Known environment limitations* below.
 
 ---
 
@@ -135,10 +161,12 @@ excel-data-analyzer/
 │   ├── dev.mjs                  # Development launcher (Vite + esbuild watch + Electron)
 │   ├── build-electron.mjs       # esbuild bundler for main/preload
 │   ├── generate-icons.mjs       # Dependency-free PNG/ICO icon generator
+│   ├── release-check.mjs        # Release validation (identity, config, icons, archive)
 │   ├── verify.mjs               # Verification entry point (runs every suite)
 │   └── verify/                  # Suites + shared harness + fictional fixtures
-│       ├── stage1.mjs … stage5.mjs  # shell → import → filtering → export → analytics
-├── build/                       # Generated app icons (icon.ico, icon.png)
+│       ├── packaging.mjs        #   Release-input inspection helpers (shared)
+│       ├── stage1.mjs … stage6.mjs  # shell → import → filtering → export → analytics → packaging
+├── build/                       # Generated app icons (icon.ico, icon.png, icons/)
 ├── electron-builder.yml         # Packaging configuration
 ├── index.html
 ├── package.json
@@ -410,7 +438,7 @@ Electron, and is memoized in `AnalyticsProvider` so nothing is recalculated per 
 npm run verify
 ```
 
-`npm run verify` builds the app and then runs every suite — **706 checks** that do not need a GUI:
+`npm run verify` builds the app and then runs every suite — **762 checks** that do not need a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
@@ -511,6 +539,39 @@ npm run verify
    IPC, `eval` and blocking dialogs, no absolute path rendered, the motion budget (no bounce, no
    continuous or oversized animation), no new charting dependency, and a WCAG AA contrast sweep
    that measures every text/background combination in the interface against its own theme.
+22. **Windows release packaging** — the application identity (name, reverse-domain identifier,
+   version) across `package.json`, the packaging configuration and the interface; the configuration
+   validated against Electron Builder's own schema, the explicit x64 NSIS target, the per-user
+   installer options, the artefact names and the ignored `release/` directory; the packaged build
+   itself (the real `dist/` and `dist-electron/` bundles loaded with a mocked Electron API, the
+   renderer served over `app://bundle/` and never `file://`, the hardened web preferences, the
+   readable failure page when the interface cannot load, no source maps or development labels);
+   and the Windows release material (`build/icon.ico` parsed as a real multi-resolution container,
+   the file-system hygiene of the main process, the asar archive packed from the configured
+   contents, and the release documentation).
+
+### Release check
+
+```bash
+npm run release:check
+```
+
+`npm run release:check` validates the release inputs without launching Electron and without a
+network connection: the identity and version, the Electron Builder schema, the Windows target and
+installer options, the icon binaries, the `app://bundle/` architecture, the production CSP, the
+absence of development material in the package, and the asar archive packed from the configured
+contents. It reports *configuration* correctness — it does not build or install the application.
+
+### Known environment limitations
+
+* The installer, the portable executable, the application window, the native open/save dialogs,
+  the export files and the uninstaller are produced and exercised by Electron Builder on a Windows
+  machine. **Nothing of that has been executed in this checkout**: the automated suites and
+  `npm run release:check` run headlessly (JSDOM + a mocked Electron API), and Electron Builder
+  cannot download the Windows runtime here. Statement of record:
+  `npm run dist:win` → **NOT EXECUTED — environment limitation**.
+* The headless suites prove configuration and code behaviour. They are not a substitute for
+  installing the application on Windows and following the checklist below.
 
 The native window, the Windows file picker, the Windows save dialog, the packaged application and
 the installer need a machine that can run Electron and Windows: `npm run dev` (and
@@ -593,10 +654,26 @@ against the real Windows dialog here.
 * Walk through the six session states (welcome, workbook loaded, filters active, no matches,
   data-quality inspection, duplicate inspection) → each one is visibly distinct, and *no matches*
   keeps the dataset and the filter panel usable.
+* Open **Settings → About** → the card shows *Excel Data Analyzer*, the version reported by the
+  running application (identical to the installer version) and *Installed build*, with the product
+  description and the copyright notice; the window title bar shows the same name.
 * Minimise, maximise/restore and close the window with the custom title-bar controls.
 * `npm start` (packaged-style build, `app://` origin) renders exactly like `npm run dev`.
 * Resize the window (including down to 900 × 620) — the layout stays usable, and a large workbook
   (tens of thousands of rows) keeps scrolling smoothly.
+* Run `release/Excel Data Analyzer-<version>-Setup.exe` → the installer opens with the application
+  icon, offers a per-user installation (no administrator prompt) and an installation directory,
+  and finishes; the application appears in *Windows Settings → Apps → Installed apps* with the
+  correct name, icon and version and is reachable from the Start menu.
+* Launch the installed application from the Start menu → it opens the Dashboard and every workflow
+  above works exactly as it does in development (files with spaces, Unicode or parentheses in
+  their path included).
+* Launch `release/Excel Data Analyzer-<version>-Portable.exe` → the same application starts without
+  installing anything and without writing into its own directory.
+* Disconnect from the network and repeat one full import → filter → dashboard → export cycle → the
+  application never makes a network request.
+* Uninstall through *Windows Settings → Apps → Installed apps → Excel Data Analyzer* → the
+  application files and its shortcuts are removed.
 
 ---
 
@@ -609,12 +686,13 @@ against the real Windows dialog here.
 | 3     | Filtering by date/name/vehicle/amount, totals over the filtered set ✅ |
 | 4     | Export the filtered records to Excel, production UX and resilience ✅  |
 | 5     | Analytics workspace, data-quality insights, duplicate insight, session UX ✅ |
-| 6     | Windows installer polish, icons, signing, release packaging           |
+| 6     | Windows installer, icons, portable build, release readiness ✅          |
 
-Stage 5 is complete: the Dashboard describes the imported workbook with a single-pass analytics
-layer (baseline statistics, payment-mode breakdown, amount distribution, data-quality summary and
-an informational duplicate insight), each insight opens the affected rows in the existing table
-without modifying anything, and every session state — welcome, loaded, filtered, zero matches,
-both inspections — is visually distinct. PDF export, record editing, saved filter presets,
-diagrams, accounts, cloud sync, scheduled imports and packaging polish remain out of scope and are
-deliberately not implemented.
+Stage 6 is complete: the application has a stable identity (Excel Data Analyzer,
+`com.exceldataanalyzer.app`, version `0.2.0` from `package.json`), a multi-resolution icon in the
+colours of the interface, a per-user NSIS installer with an optional portable build, release
+artefacts in `release/`, an About card that reports the real runtime version, and a release check
+that validates the packaging inputs. Code signing is not part of this stage: the installer is
+unsigned, so Windows SmartScreen will warn on first run. PDF export, record editing, saved filter
+presets, diagrams, accounts, cloud sync, scheduled imports, telemetry and auto-update remain out
+of scope and are deliberately not implemented.

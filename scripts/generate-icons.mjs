@@ -9,7 +9,9 @@
  *   build/icon.ico            multi-resolution Windows icon (16 → 256)
  *
  * The artwork is drawn programmatically so the repository stays free of binary
- * design files: a blue-violet gradient tile with a spreadsheet glyph.
+ * design files: a deep-indigo gradient tile with a spreadsheet glyph. The
+ * colours are the ones the interface itself uses (see tailwind.config.ts), so
+ * the taskbar, the Start Menu and the title bar read as one product.
  */
 import { deflateSync } from 'node:zlib';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -21,9 +23,14 @@ const buildDir = path.join(root, 'build');
 const iconsDir = path.join(buildDir, 'icons');
 
 const MASTER_SIZE = 1024;
-const PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
-/** Windows .ico entries: PNG for 256, uncompressed BMP for the smaller sizes. */
-const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
+const PNG_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512];
+/**
+ * Windows .ico entries: PNG for 256, uncompressed 32-bit BMP for the smaller
+ * sizes. The list covers the sizes Explorer, the taskbar, the Start Menu, the
+ * installer and the Add/Remove Programs entry ask for — including 20 and 40,
+ * which Windows uses at 125 % and 150 % display scaling.
+ */
+const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
 /* -------------------------------------------------------------------------- */
 /* Canvas                                                                      */
@@ -113,9 +120,9 @@ const toUnit = (hex) => [
   parseInt(hex.slice(5, 7), 16) / 255,
 ];
 
-const INDIGO = toUnit('#6366F1');
-const VIOLET = toUnit('#8B5CF6');
-const CYAN = toUnit('#22D3EE');
+const INDIGO = toUnit('#4F46E5');
+const VIOLET = toUnit('#4338CA');
+const CYAN = toUnit('#0E7490');
 const WHITE = [1, 1, 1];
 
 /* -------------------------------------------------------------------------- */

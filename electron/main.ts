@@ -67,6 +67,24 @@ const APP_HOST = 'bundle';
 const RENDERER_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const RENDERER_ENTRY_URL = `${RENDERER_ORIGIN}/index.html`;
 
+/**
+ * Shown when the packaged interface cannot be loaded at all (a missing or
+ * damaged installation). It replaces an unexplained blank window with a
+ * readable explanation that contains no system detail, and it is a plain
+ * document so it needs neither the bundle nor the preload script.
+ */
+const STARTUP_FAILURE_URL = `data:text/html;charset=utf-8,${encodeURIComponent(
+  '<!doctype html><html lang="en"><head><meta charset="utf-8" />' +
+    '<title>Excel Data Analyzer</title></head>' +
+    '<body style="margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;' +
+    'background:#F4F5F7;color:#1F2430;font-family:Segoe UI,system-ui,sans-serif">' +
+    '<div style="max-width:32rem;padding:2rem;text-align:center">' +
+    '<h1 style="font-size:1.125rem;margin:0 0 0.5rem">The interface could not be loaded</h1>' +
+    '<p style="margin:0;font-size:0.9375rem;line-height:1.6;color:#3F4753">' +
+    'The application files are missing or damaged. Please reinstall Excel Data Analyzer. ' +
+    'No workbooks were changed.</p></div></body></html>',
+)}`;
+
 // Runs at module scope on purpose: privileged schemes must be declared before
 // the `ready` event, and this call is only allowed once per process.
 protocol.registerSchemesAsPrivileged([
@@ -97,6 +115,19 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow.restore();
     }
     mainWindow.focus();
+  });
+
+  // A startup exception must never leave the user with an invisible process:
+  // it is logged for development and reported once, then the app exits.
+  process.on('uncaughtException', (error) => {
+    console.error('[app] an unexpected error reached the main process', error);
+    if (app.isReady()) {
+      dialog.showErrorBox(
+        'Excel Data Analyzer',
+        'The application encountered an unexpected error and needs to close.',
+      );
+    }
+    app.exit(1);
   });
 
   void app.whenReady().then(() => {
@@ -157,6 +188,23 @@ function createMainWindow(): BrowserWindow {
   void window.loadURL(DEV_SERVER_URL ?? RENDERER_ENTRY_URL);
 
   window.once('ready-to-show', () => window.show());
+
+  // A missing renderer bundle or an unavailable preload script would otherwise
+  // show an empty window. The real detail is logged for development; the user
+  // gets a readable page and can still reach the rest of the system.
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
+    if (validatedUrl.startsWith('data:')) {
+      return;
+    }
+    console.error(
+      `[app] the interface failed to load (${errorCode} ${errorDescription}) for ${validatedUrl}`,
+    );
+    void window.loadURL(STARTUP_FAILURE_URL);
+  });
+
+  window.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`[app] the preload script ${path.basename(preloadPath)} could not run`, error);
+  });
 
   // Keep a custom title bar in sync with the real window state.
   const publishState = (): void => {
@@ -380,6 +428,9 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(IPC_CHANNELS.getPlatformInfo, (): PlatformInfo => ({
+    // The identity shown in the interface comes from the application metadata
+    // Electron loaded (package.json), never from a duplicated literal.
+    appName: app.getName(),
     platform: process.platform,
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,

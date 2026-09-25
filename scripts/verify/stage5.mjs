@@ -1671,27 +1671,36 @@ async function verifyWorkspaceQuality(workspace, analytics) {
   const palette = readThemePalette(await readSource('tailwind.config.ts'));
   const colourPairs = collectColourPairs(byFile, palette);
   const failingPairs = colourPairs.filter((pair) => pair.ratio < 4.5);
-  // The sweep only sees one element. This single pair is painted by an ancestor
-  // and gets its own measurement in the check below.
-  const inheritedPairs = failingPairs.filter(
-    (pair) => pair.file === 'src/layouts/TitleBar.tsx' && pair.pair.startsWith('text-white'),
-  );
+  // The sweep only sees the classes of a single element, so a white glyph that
+  // sits on a gradient painted by its parent cannot be resolved here. Those
+  // pairs are collected and measured against the gradient below — but only when
+  // the file really draws that gradient.
+  const inheritedPairs = failingPairs.filter((pair) => pair.pair.startsWith('text-white'));
   const unresolvedPairs = failingPairs.filter((pair) => !inheritedPairs.includes(pair));
   check(
     GROUP_QUALITY,
     `every text/background pair in the interface clears 4.5:1 (${colourPairs.length} combinations over ${palette.size} tokens)`,
-    colourPairs.length >= 30 && unresolvedPairs.length === 0 && inheritedPairs.length === 1,
+    colourPairs.length >= 30 &&
+      unresolvedPairs.length === 0 &&
+      inheritedPairs.length > 0 &&
+      inheritedPairs.every((pair) => /bg-accent-gradient/.test(byFile.get(pair.file) ?? '')),
     failingPairs
       .slice(0, 4)
       .map((pair) => `${pair.ratio.toFixed(2)}:1 ${pair.file} ${pair.variant} ${pair.pair}`)
       .join('; '),
   );
   const markGlyph = contrastRatio(hexToRgb('#FFFFFF'), hexToRgb(palette.get('accent-gradient')));
-  const titleBar = byFile.get('src/layouts/TitleBar.tsx') ?? '';
+  // Elements that paint the gradient *and* carry white text. The gradient is
+  // also used for plain bars, which have no text at all.
+  const whiteOnGradient = [...byFile.entries()].filter(
+    ([, source]) => /bg-accent-gradient/.test(source) && /text-white/.test(source),
+  );
   check(
     GROUP_QUALITY,
-    'the white mark of the title bar clears 4.5:1 against the gradient it sits on',
-    markGlyph >= 4.5 && /bg-accent-gradient/.test(titleBar) && /text-white/.test(titleBar),
+    `the white text on the accent gradient clears 4.5:1 (${whiteOnGradient.length} elements)`,
+    markGlyph >= 4.5 &&
+      whiteOnGradient.length >= 2 &&
+      inheritedPairs.every((pair) => whiteOnGradient.some(([file]) => file === pair.file)),
     `${markGlyph.toFixed(2)}:1`,
   );
 

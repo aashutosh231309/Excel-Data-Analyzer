@@ -276,6 +276,7 @@ export function createMockBridge(overrides = {}) {
   const bridge = {
     app: {
       getPlatformInfo: async () => ({
+        appName: 'Excel Data Analyzer',
         platform: 'win32',
         appVersion: '0.2.0',
         electronVersion: '44.0.0',
