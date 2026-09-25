@@ -52,7 +52,7 @@ mode and opens the desktop window against the dev server.
 | `npm run build`           | Type-check, then build main/preload (`dist-electron`) and UI (`dist`) |
 | `npm run typecheck`       | TypeScript strict-mode check with no emit                       |
 | `npm start`               | Build and run the packaged-style application (`electron .`)     |
-| `npm run verify`          | Build, then run the Stage 1 verification harness (94 checks)     |
+| `npm run verify`          | Build, then run the Stage 1 verification harness (127 checks)    |
 | `npm run icons`           | Regenerate `build/icon.ico` / `build/icon.png`                  |
 | `npm run pack`            | Unpacked application directory (`release/`)                     |
 | `npm run dist:win`        | Windows installer (NSIS, x64)                                   |
@@ -172,20 +172,24 @@ Every colour, radius, shadow and animation is declared once in `tailwind.config.
 npm run verify
 ```
 
-The harness performs 94 checks that do not require a GUI:
+The harness performs 127 checks that do not require a GUI:
 
 1. **Selection rules** — `xlsx`/`xls` acceptance (including upper case and dotted names),
    rejection of other types, metadata mapping and user-facing messages.
 2. **Security configuration** — static verification of the Electron flags, the whitelisted bridge,
    the absence of Node/Electron imports in the renderer and the strict CSP.
-3. **Renderer** — the real React application is rendered against the compiled Tailwind stylesheet
+3. **Main process** — the real `dist-electron/main.js` bundle is loaded with a mocked Electron API
+   to exercise the window options, every IPC handler, the file dialog (accept, cancel, reject),
+   drag-and-drop validation (wrong type, directory, missing file, malformed input), the window
+   commands, the permission policy, navigation blocking and the single-instance rule.
+4. **Renderer** — the real React application is rendered against the compiled Tailwind stylesheet
    in a DOM environment: copy, palette, radii, empty-state placeholders, navigation, notification
    and drag-and-drop behaviour.
-4. **Desktop bridge** — the renderer is re-run against a mocked preload bridge to verify the file
+5. **Desktop bridge** — the renderer is re-run against a mocked preload bridge to verify the file
    selection flow, rejection handling and the window controls end to end.
 
-Testing the desktop shell itself (native window, Windows file picker) requires a machine that can
-run Electron: `npm run dev` on Windows, then use the checklist below.
+The native window and the Windows file picker themselves need a machine that can run Electron:
+`npm run dev` on Windows, then work through the checklist below.
 
 ### Manual Stage 1 checklist
 

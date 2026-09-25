@@ -11,9 +11,9 @@
  * The desktop shell itself is launched with `npm run dev` on a machine that can
  * run Electron; this harness covers everything that is verifiable headlessly.
  */
-import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Module, { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -721,6 +721,407 @@ async function verifyDesktopBridgeFlow(bundlePath, html, css) {
   dom.window.close();
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* 4. Main process (built bundle, mocked Electron API)                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Loads the real `dist-electron/main.js` bundle with a mocked Electron module so
+ * the privileged behaviour (window options, IPC handlers, file validation,
+ * dialogs, navigation and permission policy) can be exercised headlessly.
+ */
+async function verifyMainProcess(workspace) {
+  const bundlePath = path.join(root, 'dist-electron/main.js');
+  const tempDir = path.join(workspace, 'files');
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(tempDir, { recursive: true });
+
+  const workbooks = {
+    xlsx: path.join(tempDir, 'july payments.xlsx'),
+    xls: path.join(tempDir, 'ledger 2025.xls'),
+    text: path.join(tempDir, 'notes.txt'),
+    folder: path.join(tempDir, 'folder.xls'),
+    missing: path.join(tempDir, 'deleted.xlsx'),
+  };
+  await writeFile(workbooks.xlsx, Buffer.alloc(1536, 7));
+  await writeFile(workbooks.xls, Buffer.alloc(4096, 3));
+  await writeFile(workbooks.text, 'not a spreadsheet');
+  await mkdir(workbooks.folder, { recursive: true });
+
+  function createElectronHarness({ singleInstanceLock = true } = {}) {
+    const state = {
+      quitCalls: 0,
+      handlers: new Map(),
+      windows: [],
+      permissionHandler: null,
+      dialogResult: { canceled: true, filePaths: [] },
+      dialogOptions: [],
+      externalUrls: [],
+      themeSource: 'system',
+    };
+
+    class FakeWebContents {
+      constructor() {
+        this.sent = [];
+        this.navigationListeners = [];
+        this.windowOpenHandler = null;
+      }
+      send(channel, payload) {
+        this.sent.push({ channel, payload });
+      }
+      setWindowOpenHandler(handler) {
+        this.windowOpenHandler = handler;
+      }
+      on(event, listener) {
+        if (event === 'will-navigate') {
+          this.navigationListeners.push(listener);
+        }
+      }
+    }
+
+    class FakeBrowserWindow {
+      constructor(options) {
+        this.options = options;
+        this.webContents = new FakeWebContents();
+        this.listeners = new Map();
+        this.maximized = false;
+        this.fullScreen = false;
+        this.minimized = false;
+        this.destroyed = false;
+        this.shown = false;
+        state.windows.push(this);
+      }
+      loadURL(url) {
+        this.loadedUrl = url;
+        return Promise.resolve();
+      }
+      loadFile(file) {
+        this.loadedFile = file;
+        return Promise.resolve();
+      }
+      once(event, listener) {
+        if (event === 'ready-to-show') {
+          this.readyToShow = listener;
+        }
+      }
+      on(event, listener) {
+        const listeners = this.listeners.get(event) ?? [];
+        listeners.push(listener);
+        this.listeners.set(event, listeners);
+      }
+      emit(event) {
+        for (const listener of this.listeners.get(event) ?? []) {
+          listener();
+        }
+      }
+      isDestroyed() {
+        return this.destroyed;
+      }
+      isMaximized() {
+        return this.maximized;
+      }
+      isFullScreen() {
+        return this.fullScreen;
+      }
+      maximize() {
+        this.maximized = true;
+        this.emit('maximize');
+      }
+      unmaximize() {
+        this.maximized = false;
+        this.emit('unmaximize');
+      }
+      minimize() {
+        this.minimized = true;
+      }
+      restore() {
+        this.minimized = false;
+        this.emit('restore');
+      }
+      close() {
+        this.closed = true;
+      }
+      focus() {
+        this.focused = true;
+      }
+      show() {
+        this.shown = true;
+      }
+      static fromWebContents(sender) {
+        return state.windows.find((window) => window.webContents === sender) ?? null;
+      }
+      static getAllWindows() {
+        return state.windows;
+      }
+    }
+
+    const electron = {
+      app: {
+        requestSingleInstanceLock: () => singleInstanceLock,
+        whenReady: () => Promise.resolve(),
+        on: () => {},
+        quit: () => {
+          state.quitCalls += 1;
+        },
+        getVersion: () => '0.1.0',
+        isPackaged: false,
+      },
+      BrowserWindow: FakeBrowserWindow,
+      ipcMain: { handle: (channel, handler) => state.handlers.set(channel, handler) },
+      dialog: {
+        showOpenDialog: async (...args) => {
+          state.dialogOptions.push(args[args.length - 1]);
+          return state.dialogResult;
+        },
+      },
+      session: {
+        defaultSession: {
+          setPermissionRequestHandler: (handler) => {
+            state.permissionHandler = handler;
+          },
+        },
+      },
+      nativeTheme: {
+        get themeSource() {
+          return state.themeSource;
+        },
+        set themeSource(value) {
+          state.themeSource = value;
+        },
+      },
+      shell: {
+        openExternal: async (url) => {
+          state.externalUrls.push(url);
+        },
+      },
+    };
+
+    return { state, electron };
+  }
+
+  async function loadMainProcess(options = {}) {
+    const harness = createElectronHarness(options);
+    const originalLoad = Module._load;
+    Module._load = function load(request, parent, isMain) {
+      if (request === 'electron') {
+        return harness.electron;
+      }
+      return originalLoad.call(this, request, parent, isMain);
+    };
+    delete require.cache[bundlePath];
+    try {
+      require(bundlePath);
+    } finally {
+      Module._load = originalLoad;
+    }
+    // `app.whenReady().then(...)` resolves on the microtask queue.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    harness.window = harness.state.windows[0];
+    return harness;
+  }
+
+  const harness = await loadMainProcess();
+  const { state } = harness;
+  const windowOptions = harness.window?.options;
+
+  check('main process', 'the main bundle loads', Boolean(harness.window), 'no window was created');
+  check(
+    'main process',
+    'a 1280×800 window with a 900×620 minimum is created',
+    windowOptions?.width === 1280 &&
+      windowOptions?.height === 800 &&
+      windowOptions?.minWidth === 900 &&
+      windowOptions?.minHeight === 620,
+    JSON.stringify({ w: windowOptions?.width, h: windowOptions?.height, mw: windowOptions?.minWidth, mh: windowOptions?.minHeight }),
+  );
+  check(
+    'main process',
+    'the window is frameless but keeps minimise/maximise/close',
+    windowOptions?.frame === false &&
+      windowOptions?.minimizable === true &&
+      windowOptions?.maximizable === true &&
+      windowOptions?.closable === true,
+  );
+  check(
+    'main process',
+    'webPreferences are hardened',
+    windowOptions?.webPreferences?.contextIsolation === true &&
+      windowOptions.webPreferences.nodeIntegration === false &&
+      windowOptions.webPreferences.sandbox === true &&
+      windowOptions.webPreferences.webSecurity === true,
+  );
+  check(
+    'main process',
+    'the preload script is wired to the window',
+    windowOptions?.webPreferences?.preload === path.join(root, 'dist-electron/preload.js'),
+    windowOptions?.webPreferences?.preload,
+  );
+  check('main process', 'the window background matches the design system', windowOptions?.backgroundColor === '#0B1020');
+  harness.window?.readyToShow?.();
+  check('main process', 'the ready-to-show handler shows the window', harness.window?.shown === true);
+  check('main process', 'the packaged renderer index.html is loaded', harness.window?.loadedFile === path.join(root, 'dist/index.html'), harness.window?.loadedFile);
+  check('main process', 'dark mode is requested from the OS', state.themeSource === 'dark');
+
+  const expectedChannels = [
+    'excel:browse-file',
+    'excel:validate-file',
+    'app:get-platform-info',
+    'window:get-state',
+    'window:minimize',
+    'window:toggle-maximize',
+    'window:close',
+  ];
+  check(
+    'main process',
+    'every whitelisted IPC channel has exactly one handler',
+    expectedChannels.every((channel) => state.handlers.has(channel)) && state.handlers.size === expectedChannels.length,
+    `registered: ${[...state.handlers.keys()].join(', ')}`,
+  );
+
+  // --- native file dialog -------------------------------------------------
+  const invoke = (channel, ...args) =>
+    state.handlers.get(channel)({ sender: harness.window.webContents }, ...args);
+
+  state.dialogResult = { canceled: true, filePaths: [] };
+  const cancelled = await invoke('excel:browse-file');
+  check('main process', 'cancelling the dialog is reported as cancelled', cancelled.status === 'cancelled');
+  const filters = state.dialogOptions.at(-1)?.filters?.[0];
+  check(
+    'main process',
+    'the picker is filtered to .xlsx and .xls',
+    JSON.stringify(filters) === JSON.stringify({ name: 'Excel workbooks', extensions: ['xlsx', 'xls'] }),
+    JSON.stringify(filters),
+  );
+
+  state.dialogResult = { canceled: false, filePaths: [workbooks.xlsx] };
+  const xlsxSelection = await invoke('excel:browse-file');
+  check(
+    'main process',
+    'an .xlsx file is accepted with its metadata',
+    xlsxSelection.status === 'selected' &&
+      xlsxSelection.file.name === 'july payments.xlsx' &&
+      xlsxSelection.file.path === workbooks.xlsx &&
+      xlsxSelection.file.extension === 'xlsx' &&
+      xlsxSelection.file.sizeInBytes === 1536,
+    JSON.stringify(xlsxSelection),
+  );
+
+  state.dialogResult = { canceled: false, filePaths: [workbooks.xls] };
+  const xlsSelection = await invoke('excel:browse-file');
+  check(
+    'main process',
+    'an .xls file is accepted with its metadata',
+    xlsSelection.status === 'selected' && xlsSelection.file.extension === 'xls' && xlsSelection.file.sizeInBytes === 4096,
+    JSON.stringify(xlsSelection),
+  );
+
+  state.dialogResult = { canceled: false, filePaths: [workbooks.text] };
+  const textSelection = await invoke('excel:browse-file');
+  check(
+    'main process',
+    'an unsupported file chosen through the picker is rejected',
+    textSelection.status === 'rejected' &&
+      textSelection.fileName === 'notes.txt' &&
+      textSelection.message.includes('.xlsx, .xls'),
+    JSON.stringify(textSelection),
+  );
+
+  // --- drag & drop validation --------------------------------------------
+  const dropped = await invoke('excel:validate-file', workbooks.xlsx);
+  check('main process', 'a dropped spreadsheet is validated', dropped.status === 'selected' && dropped.file.path === workbooks.xlsx);
+  const droppedBadType = await invoke('excel:validate-file', workbooks.text);
+  check('main process', 'a dropped non-spreadsheet is rejected', droppedBadType.status === 'rejected');
+  const droppedFolder = await invoke('excel:validate-file', workbooks.folder);
+  check(
+    'main process',
+    'a directory with a spreadsheet extension is rejected',
+    droppedFolder.status === 'rejected' && droppedFolder.message.includes('not a file'),
+    JSON.stringify(droppedFolder),
+  );
+  const droppedMissing = await invoke('excel:validate-file', workbooks.missing);
+  check(
+    'main process',
+    'a missing file is rejected with a readable message',
+    droppedMissing.status === 'rejected' && droppedMissing.message.includes('could not be read'),
+    JSON.stringify(droppedMissing),
+  );
+  const droppedJunk = await invoke('excel:validate-file', 42);
+  check('main process', 'a malformed path is rejected', droppedJunk.status === 'rejected');
+
+  // --- platform info & window commands -----------------------------------
+  const platformInfo = await invoke('app:get-platform-info');
+  const platformKeys = ['platform', 'appVersion', 'electronVersion', 'chromeVersion', 'nodeVersion', 'isPackaged'];
+  check(
+    'main process',
+    'platform information is reported read-only',
+    platformKeys.every((key) => key in platformInfo) &&
+      platformInfo.appVersion === '0.1.0' &&
+      platformInfo.isPackaged === false &&
+      platformInfo.nodeVersion === process.versions.node,
+    JSON.stringify(platformInfo),
+  );
+
+  check('main process', 'window state is reported', (await invoke('window:get-state')).isMaximized === false);
+  harness.window.webContents.sent.length = 0;
+  await invoke('window:minimize');
+  check('main process', 'minimize reaches the window', harness.window.minimized === true);
+  const maximized = await invoke('window:toggle-maximize');
+  check('main process', 'maximize toggles the window state', maximized.isMaximized === true && harness.window.maximized === true);
+  const restored = await invoke('window:toggle-maximize');
+  check('main process', 'the same command restores the window', restored.isMaximized === false);
+  const pushedStates = harness.window.webContents.sent.filter((entry) => entry.channel === 'window:state-changed');
+  check(
+    'main process',
+    'window state changes are pushed to the renderer',
+    pushedStates.length >= 2 && pushedStates.at(-1).payload.isMaximized === false,
+    `${pushedStates.length} notifications`,
+  );
+  await invoke('window:close');
+  check('main process', 'close reaches the window', harness.window.closed === true);
+
+  // --- security policies --------------------------------------------------
+  const decisions = [];
+  state.permissionHandler?.({}, 'media', (granted) => decisions.push(['media', granted]));
+  state.permissionHandler?.({}, 'geolocation', (granted) => decisions.push(['geolocation', granted]));
+  state.permissionHandler?.({}, 'clipboard-sanitized-write', (granted) => decisions.push(['clipboard-sanitized-write', granted]));
+  check(
+    'main process',
+    'camera, microphone and location permissions are denied',
+    decisions[0]?.[1] === false && decisions[1]?.[1] === false && decisions[2]?.[1] === true,
+    JSON.stringify(decisions),
+  );
+
+  const openHandler = harness.window.webContents.windowOpenHandler?.({ url: 'https://example.com/docs' });
+  check(
+    'main process',
+    'external links are denied in-app and opened in the default browser',
+    openHandler?.action === 'deny' && state.externalUrls.includes('https://example.com/docs'),
+  );
+  const windowOpenDenied = harness.window.webContents.windowOpenHandler?.({ url: 'file:///etc/passwd' });
+  check('main process', 'non-https links are not opened externally', windowOpenDenied?.action === 'deny' && state.externalUrls.length === 1);
+
+  const navigationDecision = { prevented: false, preventDefault() { this.prevented = true; } };
+  harness.window.webContents.navigationListeners[0]?.(
+    navigationDecision,
+    'https://malicious.example.com/steal',
+  );
+  check('main process', 'navigation away from the application is blocked', navigationDecision.prevented === true);
+
+  const localNavigation = { prevented: false, preventDefault() { this.prevented = true; } };
+  harness.window.webContents.navigationListeners[0]?.(localNavigation, `file://${path.join(root, 'dist/index.html')}`);
+  check('main process', 'local renderer navigation stays allowed', localNavigation.prevented === false);
+
+  // --- single instance ----------------------------------------------------
+  const second = await loadMainProcess({ singleInstanceLock: false });
+  check(
+    'main process',
+    'a second instance quits instead of opening another window',
+    second.state.quitCalls === 1 && second.state.windows.length === 0 && second.state.handlers.size === 0,
+    JSON.stringify({ quits: second.state.quitCalls, windows: second.state.windows.length }),
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Runner                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -734,6 +1135,7 @@ try {
   }
   await verifySelectionRules(workspace);
   await verifySecurityConfiguration();
+  await verifyMainProcess(workspace);
   await verifyRenderer(workspace);
 } finally {
   await rm(workspace, { recursive: true, force: true });
